@@ -191,10 +191,21 @@ func _gui_input(event: InputEvent) -> void:
 				if mb.pressed:
 					_handle_local_click(mb.position)
 			elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
+				if selected_tool == "train":
+					_select_tool("track")
+					local_message = "Buy Train canceled. Track tool selected."
+					_refresh_local_side_text()
+					return
 				var old_tool := selected_tool
 				selected_tool = "erase"
 				_handle_local_click(mb.position)
 				selected_tool = old_tool
+	if event is InputEventKey and screen == Screen.LOCAL:
+		var key := event as InputEventKey
+		if key.pressed and key.keycode == KEY_ESCAPE and selected_tool == "train":
+			_select_tool("track")
+			local_message = "Buy Train canceled. Track tool selected."
+			_refresh_local_side_text()
 	if event is InputEventMouseMotion and screen == Screen.LOCAL and dragging:
 		if selected_tool in ["track", "erase"]:
 			_handle_local_click((event as InputEventMouseMotion).position)
@@ -355,13 +366,13 @@ func _build_regional_ui() -> void:
 	_refresh_regional_side_text()
 
 func _build_local_ui() -> void:
-	_add_backplate(ui_hud_texture, Control.PRESET_TOP_WIDE, Vector4(4, 42, -4, 104), Vector4(220, 110, 220, 100), Color(1, 1, 1, 0.92))
+	_add_backplate(ui_hud_texture, Control.PRESET_TOP_WIDE, Vector4(4, 42, -4, 188), Vector4(220, 110, 220, 100), Color(1, 1, 1, 0.92))
 	hud_bar = HBoxContainer.new()
 	hud_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	hud_bar.offset_left = 18
 	hud_bar.offset_top = 52
 	hud_bar.offset_right = -18
-	hud_bar.offset_bottom = 98
+	hud_bar.offset_bottom = 106
 	hud_bar.add_theme_constant_override("separation", 10)
 	hud_bar.z_index = 30
 	hud_bar.z_as_relative = false
@@ -371,14 +382,13 @@ func _build_local_ui() -> void:
 	_add_button(hud_bar, "1x/2x", func(): _toggle_speed())
 	_add_button(hud_bar, "Region", func(): _return_to_region())
 
-	_add_backplate(ui_hud_texture, Control.PRESET_BOTTOM_WIDE, Vector4(4, -108, -4, -4), Vector4(220, 110, 220, 100), Color(1, 1, 1, 0.93))
 	tool_bar = HBoxContainer.new()
-	tool_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	tool_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	tool_bar.offset_left = 20
-	tool_bar.offset_top = -96
+	tool_bar.offset_top = 116
 	tool_bar.offset_right = -20
-	tool_bar.offset_bottom = -18
-	tool_bar.add_theme_constant_override("separation", 8)
+	tool_bar.offset_bottom = 180
+	tool_bar.add_theme_constant_override("separation", 6)
 	tool_bar.z_index = 30
 	tool_bar.z_as_relative = false
 	add_child(tool_bar)
@@ -445,7 +455,7 @@ func _add_button(parent: Control, text: String, callback: Callable) -> Button:
 	b.text = text
 	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	b.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
-	b.custom_minimum_size = Vector2(136, 66)
+	b.custom_minimum_size = Vector2(124, 66)
 	_style_button(b)
 	b.pressed.connect(callback)
 	parent.add_child(b)
@@ -576,12 +586,14 @@ func _update_board_layout() -> void:
 		grid_origin = GRID_ORIGIN
 		return
 	var grid: Vector2i = local["scenario"].get("grid", Vector2i(14, 9))
-	var top_reserved := 104.0
-	var bottom_reserved := 112.0
+	var top_reserved := 190.0
+	var bottom_reserved := 28.0
 	var horizontal_margin := 36.0
-	var max_cell_from_width: float = (max(size.x, 640.0) - horizontal_margin * 2.0) / float(grid.x)
+	var briefing_width := 470.0 if max(size.x, 640.0) >= 1024.0 else 0.0
+	var briefing_gap := 18.0 if briefing_width > 0.0 else 0.0
+	var max_cell_from_width: float = (max(size.x, 640.0) - horizontal_margin * 2.0 - briefing_width - briefing_gap) / float(grid.x)
 	var max_cell_from_height: float = (max(size.y, 480.0) - top_reserved - bottom_reserved) / float(grid.y)
-	cell_size = clamp(floor(min(max_cell_from_width, max_cell_from_height)), 48.0, 74.0)
+	cell_size = clamp(floor(min(max_cell_from_width, max_cell_from_height)), 48.0, 50.0)
 	grid_origin = Vector2(horizontal_margin, top_reserved)
 
 func _handle_local_click(pos: Vector2) -> void:
@@ -783,6 +795,9 @@ func _buy_train_for_source(source_id: String) -> void:
 	local["infra_cost"] += 300
 	_plan_next_path(t)
 	local_message = "%s bought at %s. Route: %s." % [t["name"], start_station["name"], " -> ".join(route)]
+	selected_tool = "track"
+	_refresh_tool_button_styles()
+	_update_status_labels()
 	_refresh_local_side_text()
 
 func _spend(money: int, materials: int) -> bool:
@@ -1364,51 +1379,56 @@ func _draw_trains() -> void:
 
 func _draw_contract_card() -> void:
 	var grid: Vector2i = local["scenario"].get("grid", Vector2i(14, 9))
-	var card_size := Vector2(532, 286)
+	var card_size := Vector2(328, 330)
 	var board_right := grid_origin.x + float(grid.x) * cell_size
-	var card_pos := Vector2(max(grid_origin.x + 24.0, board_right - card_size.x - 36.0), grid_origin.y + 16.0)
+	var card_pos := Vector2(board_right + 18.0, grid_origin.y)
+	if card_pos.x + card_size.x > size.x - 18.0:
+		card_size = Vector2(300, 96)
+		card_pos = Vector2(size.x - card_size.x - 18.0, 56.0)
 	if ui_panel_texture:
 		draw_texture_rect(ui_panel_texture, Rect2(card_pos, card_size), false, Color(1, 1, 1, 0.97))
 	else:
 		draw_rect(Rect2(card_pos, card_size), Color(1.0, 0.94, 0.72, 0.94))
 		draw_rect(Rect2(card_pos, card_size), Color.html("#172028"), false, 3)
-	var x := card_pos.x + 64.0
-	var y := card_pos.y + 42.0
+	var x := card_pos.x + 46.0
+	var y := card_pos.y + 40.0
 	var text_color := Color.html("#172028")
-	draw_string(font, Vector2(x, y), local.get("name", ""), HORIZONTAL_ALIGNMENT_LEFT, card_size.x - 120.0, 20, text_color)
+	draw_string(font, Vector2(x, y), local.get("name", ""), HORIZONTAL_ALIGNMENT_LEFT, card_size.x - 82.0, 20, text_color)
 	y += 30.0
 	var lines := _contract_card_lines()
 	for line in lines:
-		draw_string(font, Vector2(x, y), line, HORIZONTAL_ALIGNMENT_LEFT, card_size.x - 120.0, 16, text_color)
-		y += 21.0
+		if y > card_pos.y + card_size.y - 28.0:
+			break
+		draw_string(font, Vector2(x, y), line, HORIZONTAL_ALIGNMENT_LEFT, card_size.x - 82.0, 15, text_color)
+		y += 20.0
 
 func _contract_card_lines() -> Array[String]:
 	if local.get("id", "") == "central_yard":
 		return [
-			"Demand: process 20 freight trains.",
-			"Build West -> Yard -> East.",
-			"Build South -> Yard -> East.",
-			"Buy Train: click West, then South.",
-			"Block signals split track into empty/occupied sections.",
-			"Chain waits before junctions until the exit is clear.",
-			"Central Yard: chain before yard, block after exits."
+			"Demand: 20 freight trains.",
+			"West -> Yard -> East.",
+			"South -> Yard -> East.",
+			"Buy: click West, then South.",
+			"Block = next section empty.",
+			"Chain = junction exit clear.",
+			"Use chain before the yard."
 		]
 	if local.get("id", "") == "steelworks":
 		return [
 			"Demand: export 40 steel.",
 			"Coal Input feeds Steelworks.",
-			"Steelworks sends steel to Export.",
-			"Buy Train: click Coal Input.",
-			"Block signals split long track.",
-			"Chain signals protect junction entries."
+			"Steelworks sends to Export.",
+			"Buy: click Coal Input.",
+			"Block = split long track.",
+			"Chain = protect junctions."
 		]
 	return [
 		"Demand: deliver 80 coal.",
-		"Connect Coal Mine to Interchange.",
-		"Buy Train: click Coal Mine.",
-		"Block signals split the line into sections.",
-		"Use a passing loop if trains meet head-on.",
-		"Click a stopped train to read why it waits."
+		"Coal Mine -> Interchange.",
+		"Buy: click Coal Mine.",
+		"Block = split the line.",
+		"Passing loop fixes meetups.",
+		"Click stopped trains."
 	]
 
 func _draw_piece(texture: Texture2D, center: Vector2, draw_size: Vector2, rotation: float = 0.0, modulate_color: Color = Color.WHITE) -> bool:

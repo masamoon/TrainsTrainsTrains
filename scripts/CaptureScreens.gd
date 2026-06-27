@@ -12,8 +12,7 @@ func _initialize() -> void:
 	_save_view("regional_generated_ui.png")
 
 	main.start_scenario("coal_valley")
-	for x in range(2, 12):
-		main._place_track(Vector2i(x, 4))
+	main._place_track_path(Vector2i(1, 4), Vector2i(12, 4))
 	main._place_signal(Vector2i(4, 4), "block")
 	main._place_signal(Vector2i(8, 4), "block")
 	main._buy_train()

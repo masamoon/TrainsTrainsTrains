@@ -55,6 +55,9 @@ var selected_train_id := ""
 var selected_signal_pos := Vector2i(-999, -999)
 var dragging := false
 var last_drag_cell := Vector2i(-999, -999)
+var drag_start_cell := Vector2i(-999, -999)
+var drag_hover_cell := Vector2i(-999, -999)
+var erased_signal_targets: Array[Dictionary] = []
 var cell_size := CELL
 var grid_origin := GRID_ORIGIN
 
@@ -78,6 +81,7 @@ var elapsed_since_progress := 0.0
 var last_progress_count := 0
 var deadlock_cooldown := 0.0
 var signal_help_open := false
+var planning_guide_open := false
 
 func _ready() -> void:
 	font = get_theme_default_font()
@@ -160,7 +164,7 @@ func _local_side_panel_width() -> float:
 		return 520.0
 	if viewport_width >= 1500.0:
 		return 480.0
-	return 430.0
+	return 390.0
 
 func _local_side_panel_inner_width() -> float:
 	return _local_side_panel_width() - 12.0 - 36.0
@@ -227,12 +231,20 @@ func _gui_input(event: InputEvent) -> void:
 			_handle_regional_click(mb.position)
 		elif screen == Screen.LOCAL:
 			if mb.button_index == MOUSE_BUTTON_LEFT:
-				dragging = mb.pressed
 				if mb.pressed:
+					dragging = true
 					last_drag_cell = Vector2i(-999, -999)
+					drag_start_cell = _screen_to_grid(mb.position)
+					drag_hover_cell = drag_start_cell
 					_handle_local_click(mb.position)
 				else:
+					if dragging and selected_tool in ["track", "erase"]:
+						_finish_track_drag(mb.position)
+					dragging = false
 					last_drag_cell = Vector2i(-999, -999)
+					drag_start_cell = Vector2i(-999, -999)
+					drag_hover_cell = Vector2i(-999, -999)
+					queue_redraw()
 			elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 				if selected_tool in ["train", "line"]:
 					_select_tool("track")
@@ -251,7 +263,9 @@ func _gui_input(event: InputEvent) -> void:
 			_refresh_local_side_text()
 	if event is InputEventMouseMotion and screen == Screen.LOCAL and dragging:
 		if selected_tool in ["track", "erase"]:
-			_handle_local_click((event as InputEventMouseMotion).position)
+			var motion := event as InputEventMouseMotion
+			drag_hover_cell = _screen_to_grid(motion.position)
+			queue_redraw()
 
 func _define_scenarios() -> void:
 	scenarios = [
@@ -260,20 +274,21 @@ func _define_scenarios() -> void:
 			"name": "Coal Valley",
 			"purpose": "Teach basic track placement, cargo loading, cargo delivery, and train status.",
 			"objective": "Deliver 80 coal to Interchange. Keep average train wait below 40s.",
-			"briefing": "Lesson: make one straight route from Coal Mine to Interchange.\nUse Line on Coal Mine to create the route line, then Buy Line or buy a train at Coal Mine. Watch its cargo badge: EMPTY becomes COAL 40 after loading, then EMPTY again after delivery.\nOne train is enough for this first route. Add signals later when trains begin waiting.",
-			"start_message": "Build Coal Mine -> Interchange, create/select the Coal Mine line, then buy one train and watch its cargo badge.",
+			"briefing": "Contract: connect Coal Mine to Interchange and establish a coal service.\nSuccess is measured by delivered cargo and average train wait, not by matching a prescribed layout. A direct starter line is cheap, but leave room for later signals, passing space, or extra platforms if the service starts to queue.\nCreate a line from Coal Mine, assign at least one train, then watch the cargo badge and train status to decide what needs attention.",
+			"start_message": "Connect Coal Mine to Interchange, create a coal line, assign a train, then improve the service if waits appear.",
+			"guide_label": "One cheap starter option is a direct Coal Mine to Interchange connection.",
 			"target": 80,
 			"fleet_goal": 1,
 			"cargo": "coal",
 			"kind": "coal",
 			"start_budget": 1500,
-			"grid": Vector2i(14, 9),
+			"grid": Vector2i(18, 11),
 			"route": ["coal_mine", "interchange"],
 			"stations": [
-				{"id": "coal_mine", "name": "Coal Mine", "pos": Vector2i(1, 4), "role": "source", "produces": "coal", "accepts": [], "platforms": 1},
-				{"id": "interchange", "name": "Interchange", "pos": Vector2i(12, 4), "role": "sink", "produces": "", "accepts": ["coal"], "platforms": 1}
+				{"id": "coal_mine", "name": "Coal Mine", "pos": Vector2i(1, 5), "role": "source", "produces": "coal", "accepts": [], "platforms": 1},
+				{"id": "interchange", "name": "Interchange", "pos": Vector2i(16, 5), "role": "sink", "produces": "", "accepts": ["coal"], "platforms": 1}
 			],
-			"ghost": [Vector2i(1, 4), Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 4), Vector2i(5, 4), Vector2i(6, 4), Vector2i(7, 4), Vector2i(8, 4), Vector2i(9, 4), Vector2i(10, 4), Vector2i(11, 4), Vector2i(12, 4)],
+			"ghost": [Vector2i(1, 5), Vector2i(2, 5), Vector2i(3, 5), Vector2i(4, 5), Vector2i(5, 5), Vector2i(6, 5), Vector2i(7, 5), Vector2i(8, 5), Vector2i(9, 5), Vector2i(10, 5), Vector2i(11, 5), Vector2i(12, 5), Vector2i(13, 5), Vector2i(14, 5), Vector2i(15, 5), Vector2i(16, 5)],
 			"reward_money": 500,
 			"reward_materials": 0,
 			"reward_load": 8,
@@ -285,20 +300,21 @@ func _define_scenarios() -> void:
 			"name": "Signal Siding",
 			"purpose": "Teach block signals, paired signals, and a simple passing loop before introducing junctions.",
 			"objective": "Move 20 freight loads with a 2-train line.",
-			"briefing": "Lesson: two trains sharing one route need the rail split into signal sections.\nBuild the main line plus the short lower passing siding. Use paired block signals on the two-way main line and on both ends of the passing siding. For double track, use right-hand running: lower/south track eastbound, upper/north track westbound.",
-			"start_message": "Build West Line -> East Line with the lower passing siding, add paired block signals at the siding ends, then run two trains on one line.",
+			"briefing": "Contract: run a two-train freight service between West Line and East Line.\nThe constraint is shared track, not a hidden answer. Opposing trains need either room to pass, one-way separation, or enough signal blocks that the dispatcher can keep them apart.\nUse block or paired signals where they explain and improve flow, then compare total output, queues, and average wait.",
+			"start_message": "Build a West Line to East Line service for two trains. Add capacity where the trains actually get in each other's way.",
+			"guide_label": "A passing siding is one reliable option for two-way traffic, but parallel one-way track can work too.",
 			"target": 20,
 			"fleet_goal": 2,
 			"cargo": "freight",
 			"kind": "yard",
 			"start_budget": 2300,
-			"grid": Vector2i(14, 9),
+			"grid": Vector2i(18, 11),
 			"route": ["west_line", "east_line", "west_line"],
 			"stations": [
-				{"id": "west_line", "name": "West Line", "pos": Vector2i(1, 4), "role": "source", "produces": "freight", "accepts": [], "platforms": 1},
-				{"id": "east_line", "name": "East Line", "pos": Vector2i(12, 4), "role": "sink", "produces": "", "accepts": ["freight"], "platforms": 1}
+				{"id": "west_line", "name": "West Line", "pos": Vector2i(1, 5), "role": "source", "produces": "freight", "accepts": [], "platforms": 1},
+				{"id": "east_line", "name": "East Line", "pos": Vector2i(16, 5), "role": "sink", "produces": "", "accepts": ["freight"], "platforms": 1}
 			],
-			"ghost": [Vector2i(1, 4), Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 4), Vector2i(5, 4), Vector2i(6, 4), Vector2i(7, 4), Vector2i(8, 4), Vector2i(9, 4), Vector2i(10, 4), Vector2i(11, 4), Vector2i(12, 4), Vector2i(5, 4), Vector2i(5, 5), Vector2i(6, 5), Vector2i(7, 5), Vector2i(8, 5), Vector2i(9, 5), Vector2i(9, 4)],
+			"ghost": [Vector2i(1, 5), Vector2i(2, 5), Vector2i(3, 5), Vector2i(4, 5), Vector2i(5, 5), Vector2i(6, 5), Vector2i(7, 5), Vector2i(8, 5), Vector2i(9, 5), Vector2i(10, 5), Vector2i(11, 5), Vector2i(12, 5), Vector2i(13, 5), Vector2i(14, 5), Vector2i(15, 5), Vector2i(16, 5), Vector2i(5, 5), Vector2i(5, 6), Vector2i(5, 7), Vector2i(6, 7), Vector2i(7, 7), Vector2i(8, 7), Vector2i(9, 7), Vector2i(10, 7), Vector2i(11, 7), Vector2i(12, 7), Vector2i(12, 6), Vector2i(12, 5)],
 			"reward_money": 250,
 			"reward_materials": 0,
 			"reward_load": 6,
@@ -310,26 +326,53 @@ func _define_scenarios() -> void:
 			"name": "Central Yard",
 			"purpose": "Teach a compact right-hand yard loop with block spacing, a yard throat, and a return path.",
 			"objective": "Process 60 freight loads while running a 4-train yard fleet.",
-			"briefing": "Lesson: this is the first production yard loop.\nBuild West Line into Central Yard, continue to East Line, then use diagonal return rails through Central Yard and back to West Line.\nUse right-hand running: row 4 carries trains east, row 5 brings trains back into the yard throat, and row 3 carries the return west. Place block signals along straight sections and one chain signal before the diagonal return enters the yard throat.",
-			"start_message": "Build the full loop: West Line -> Central Yard -> East Line -> Central Yard -> West Line. Run four trains on the West Line line.",
+			"briefing": "Contract: keep a four-train yard fleet processing freight through Central Yard without letting the throat lock up.\nThis map is about managing a stressed production district. Build any readable circulation pattern that gives trains an entrance, a yard stop, an exit, and a way back to the source.\nUse chain signals before conflict points, block signals after clear exits, and extra platforms or holding track when queues tell you the yard is saturated.",
+			"start_message": "Design a yard circulation pattern for four trains. Watch the throat, queues, and wait time, then add infrastructure where the system strains.",
+			"guide_label": "A loop through the yard with a protected return path is one robust pattern, not the only acceptable answer.",
 			"target": 60,
 			"fleet_goal": 4,
 			"cargo": "mixed freight",
 			"kind": "yard",
 			"start_budget": 3100,
-			"grid": Vector2i(14, 9),
+			"grid": Vector2i(18, 11),
 			"route": ["west_line", "central_yard", "east_line", "central_yard", "west_line"],
 			"stations": [
-				{"id": "west_line", "name": "West Line", "pos": Vector2i(1, 3), "role": "source", "produces": "freight", "accepts": [], "platforms": 1},
-				{"id": "central_yard", "name": "Central Yard", "pos": Vector2i(7, 4), "role": "yard", "produces": "", "accepts": ["freight"], "platforms": 1},
-				{"id": "east_line", "name": "East Line", "pos": Vector2i(12, 4), "role": "sink", "produces": "", "accepts": ["freight"], "platforms": 1}
+				{"id": "west_line", "name": "West Line", "pos": Vector2i(1, 4), "role": "source", "produces": "freight", "accepts": [], "platforms": 1},
+				{"id": "central_yard", "name": "Central Yard", "pos": Vector2i(9, 5), "role": "yard", "produces": "", "accepts": ["freight"], "platforms": 1},
+				{"id": "east_line", "name": "East Line", "pos": Vector2i(16, 5), "role": "sink", "produces": "", "accepts": ["freight"], "platforms": 1}
 			],
-			"ghost": [Vector2i(1, 3), Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 4), Vector2i(5, 4), Vector2i(6, 4), Vector2i(7, 4), Vector2i(8, 4), Vector2i(9, 4), Vector2i(10, 4), Vector2i(11, 4), Vector2i(12, 4), Vector2i(11, 5), Vector2i(10, 5), Vector2i(9, 5), Vector2i(8, 5), Vector2i(7, 4), Vector2i(6, 3), Vector2i(5, 3), Vector2i(4, 3), Vector2i(3, 3), Vector2i(2, 3), Vector2i(1, 3)],
+			"ghost": [Vector2i(1, 4), Vector2i(2, 5), Vector2i(3, 5), Vector2i(4, 5), Vector2i(5, 5), Vector2i(6, 5), Vector2i(7, 5), Vector2i(8, 5), Vector2i(9, 5), Vector2i(10, 5), Vector2i(11, 5), Vector2i(12, 5), Vector2i(13, 5), Vector2i(14, 5), Vector2i(15, 5), Vector2i(16, 5), Vector2i(15, 6), Vector2i(14, 7), Vector2i(13, 7), Vector2i(12, 7), Vector2i(11, 7), Vector2i(10, 7), Vector2i(9, 5), Vector2i(8, 4), Vector2i(7, 3), Vector2i(6, 3), Vector2i(5, 3), Vector2i(4, 3), Vector2i(3, 3), Vector2i(2, 3), Vector2i(1, 4)],
 			"reward_money": 0,
 			"reward_materials": 0,
 			"reward_load": 0,
 			"reward_capacity": 20,
 			"wait_target": 45.0
+		},
+		{
+			"id": "overtake_pass",
+			"name": "Overtake Pass",
+			"purpose": "Stress-test single-track dispatch with short overtaking pockets and four-train meets.",
+			"objective": "Move 40 freight loads with at least four trains on a mostly single-track route.",
+			"briefing": "Contract: keep four freight trains moving over one shared corridor with only small passing pockets. This is not a double-track build: the main line is single track, and each pocket is just long enough to hold a meet or overtake.\nUse right-hand running through pockets: eastbound trains prefer the lower/south rail, westbound trains use the upper/north rail. Signal each pocket mouth so trains reserve one clear pocket segment at a time.",
+			"start_message": "Build West Line to East Line over a single-track corridor with short overtaking pockets. Run four trains without letting the pockets lock up.",
+			"guide_label": "A reliable pattern is one single main with three short upper passing pockets and chain-protected throats.",
+			"target": 40,
+			"fleet_goal": 4,
+			"cargo": "freight",
+			"kind": "yard",
+			"start_budget": 3900,
+			"grid": Vector2i(18, 11),
+			"route": ["west_line", "east_line", "west_line"],
+			"stations": [
+				{"id": "west_line", "name": "West Line", "pos": Vector2i(1, 5), "role": "source", "produces": "freight", "accepts": [], "platforms": 3},
+				{"id": "east_line", "name": "East Line", "pos": Vector2i(16, 5), "role": "sink", "produces": "", "accepts": ["freight"], "platforms": 3}
+			],
+			"ghost": [Vector2i(1, 5), Vector2i(2, 5), Vector2i(3, 5), Vector2i(4, 5), Vector2i(5, 5), Vector2i(6, 5), Vector2i(7, 5), Vector2i(8, 5), Vector2i(9, 5), Vector2i(10, 5), Vector2i(11, 5), Vector2i(12, 5), Vector2i(13, 5), Vector2i(14, 5), Vector2i(15, 5), Vector2i(16, 5), Vector2i(3, 5), Vector2i(4, 4), Vector2i(6, 4), Vector2i(7, 5), Vector2i(8, 5), Vector2i(9, 4), Vector2i(11, 4), Vector2i(12, 5), Vector2i(13, 5), Vector2i(14, 4), Vector2i(15, 4), Vector2i(16, 5)],
+			"reward_money": 0,
+			"reward_materials": 0,
+			"reward_load": 0,
+			"reward_capacity": 24,
+			"wait_target": 120.0
 		}
 	]
 
@@ -440,12 +483,11 @@ func _build_local_ui() -> void:
 	_add_tool_button("Erase", "erase")
 	_add_tool_button("Block\n$80", "block")
 	_add_tool_button("Chain\n$120", "chain")
-	_add_tool_button("Pair\n$140", "pair")
 	_add_tool_button("Line\nPick", "line")
 	_add_button(tool_bar, "New\nTrain", func(): _buy_available_train())
 	_add_button(tool_bar, "Assign\nTrain", func(): _assign_selected_train_to_selected_line())
 	_add_button(tool_bar, "Signal\nHelp", func(): _toggle_signal_help())
-	_add_button(tool_bar, "Loop\n$250", func(): _build_passing_loop())
+	_add_button(tool_bar, "Plan\nGuide", func(): _toggle_planning_guide())
 	_add_button(tool_bar, "Platform\n$200", func(): _add_platform())
 	_add_button(tool_bar, "Rotate\nSig", func(): _rotate_selected_signal())
 	_add_button(tool_bar, "Restart\nTrains", func(): _restart_trains_only())
@@ -520,6 +562,8 @@ func _build_local_ui() -> void:
 	side_box.add_child(line_actions)
 	var edit_stops_button := _add_button(line_actions, "Edit Stops", func(): _toggle_line_stop_edit())
 	_fit_sidebar_action_button(edit_stops_button)
+	var complete_line_button := _add_button(line_actions, "Complete Line", func(): _complete_line_stop_edit())
+	_fit_sidebar_action_button(complete_line_button)
 	var clear_stops_button := _add_button(line_actions, "Clear Stops", func(): _clear_selected_line_stops())
 	_fit_sidebar_action_button(clear_stops_button)
 	var debug_actions := HBoxContainer.new()
@@ -604,11 +648,11 @@ func _select_tool(tool: String) -> void:
 	if selected_tool == "train":
 		local_message = "Buy Train selected. Click a green source station to choose where the train starts."
 	elif selected_tool == "block":
-		local_message = "Block signal selected. Place it on straight exits to split track into clear sections."
+		local_message = "Block signal selected. Click track to place; click the signal again to toggle single or double."
 	elif selected_tool == "chain":
-		local_message = "Chain signal selected. Place it before junctions so trains wait until the exit path is clear."
+		local_message = "Chain signal selected. Click track to place; click the signal again to toggle single or double."
 	elif selected_tool == "pair":
-		local_message = "Pair selected. Click an existing block or chain signal to protect both directions on that rail."
+		local_message = "Pair selected. Existing signal tools now toggle single and double signals directly."
 	elif selected_tool == "line":
 		local_message = "Line tool selected. Click a source station to create or select its route line."
 	else:
@@ -649,6 +693,8 @@ func start_scenario(id: String) -> void:
 	selected_tool = "track"
 	selected_train_id = ""
 	selected_signal_pos = Vector2i(-999, -999)
+	erased_signal_targets.clear()
+	planning_guide_open = false
 	tracks.clear()
 	track_segments.clear()
 	signals.clear()
@@ -714,15 +760,19 @@ func _scenario_is_available(id: String) -> bool:
 		return campaign["completed"].has("coal_valley")
 	if id == "steelworks":
 		return campaign["completed"].has("central_yard")
+	if id == "overtake_pass":
+		return campaign["completed"].has("steelworks")
 	return false
 
 func _regional_node_position(id: String) -> Vector2:
 	var y := size.y * 0.52
 	if id == "coal_valley":
-		return Vector2(size.x * 0.22, y)
+		return Vector2(size.x * 0.16, y)
 	if id == "central_yard":
-		return Vector2(size.x * 0.48, y)
-	return Vector2(size.x * 0.74, y)
+		return Vector2(size.x * 0.38, y)
+	if id == "steelworks":
+		return Vector2(size.x * 0.60, y)
+	return Vector2(size.x * 0.82, y)
 
 func _update_board_layout() -> void:
 	if local.is_empty() or not local.has("scenario"):
@@ -751,7 +801,26 @@ func _handle_local_click(pos: Vector2) -> void:
 			_refresh_local_side_text()
 			queue_redraw()
 			return
+		if selected_tool == "erase":
+			var erase_signal := _hit_signal_pos(pos)
+			if erase_signal.x > -900:
+				_erase_signal_or_track(erase_signal)
+				_refresh_local_side_text()
+				queue_redraw()
+				return
 		var hit_signal := _hit_signal_pos(pos)
+		if hit_signal.x > -900 and selected_tool in ["block", "chain", "pair"]:
+			if selected_tool == "block":
+				_place_signal(hit_signal, "block")
+			elif selected_tool == "chain":
+				_place_signal(hit_signal, "chain")
+			else:
+				_place_signal_pair(hit_signal, _pair_signal_type_for(hit_signal))
+			selected_train_id = ""
+			dragging = false
+			_refresh_local_side_text()
+			queue_redraw()
+			return
 		if hit_signal.x > -900 and not (selected_tool in ["block", "chain", "pair", "erase"]):
 			selected_signal_pos = hit_signal
 			selected_train_id = ""
@@ -764,7 +833,12 @@ func _handle_local_click(pos: Vector2) -> void:
 		_select_train_or_signal(pos)
 		return
 	if editing_line_stops:
-		_append_station_to_selected_line_at(gp)
+		var add_station := _hit_line_stop_add_station(pos)
+		if add_station != "":
+			var station: Dictionary = station_by_id[add_station]
+			_append_station_to_selected_line_at(station["pos"])
+		else:
+			local_message = "Tap a station plus sign to add it to the line, or use Complete Line when finished."
 		_refresh_local_side_text()
 		queue_redraw()
 		return
@@ -783,15 +857,31 @@ func _handle_local_click(pos: Vector2) -> void:
 		else:
 			_erase_signal_or_track(gp)
 	elif selected_tool == "block":
-		_place_signal(gp, "block")
+		_place_signal(_signal_placement_cell(pos, gp), "block")
 	elif selected_tool == "chain":
-		_place_signal(gp, "chain")
+		_place_signal(_signal_placement_cell(pos, gp), "chain")
 	elif selected_tool == "pair":
-		_place_signal_pair(gp, _pair_signal_type_for(gp))
+		var signal_gp := _signal_placement_cell(pos, gp)
+		_place_signal_pair(signal_gp, _pair_signal_type_for(signal_gp))
 	elif selected_tool == "line":
 		_select_or_create_line_at(gp)
 	elif selected_tool == "train":
 		_buy_train_at(gp)
+	_refresh_local_side_text()
+	queue_redraw()
+
+func _finish_track_drag(pos: Vector2) -> void:
+	if selected_tool not in ["track", "erase"]:
+		return
+	var end_cell := _screen_to_grid(pos)
+	if not _is_in_grid(drag_start_cell) or not _is_in_grid(end_cell):
+		return
+	if end_cell == drag_start_cell:
+		return
+	if selected_tool == "track":
+		_place_track_path(drag_start_cell, end_cell)
+	elif selected_tool == "erase":
+		_erase_path(drag_start_cell, end_cell)
 	_refresh_local_side_text()
 	queue_redraw()
 
@@ -820,9 +910,55 @@ func _hit_train_id(pos: Vector2) -> String:
 func _hit_signal_pos(pos: Vector2) -> Vector2i:
 	_update_board_layout()
 	for sig_pos in signals.keys():
-		if _grid_to_screen(sig_pos).distance_to(pos) < max(24.0, cell_size * 0.42):
+		for dir in _signal_dirs(sig_pos):
+			if _signal_gate_center(sig_pos, dir).distance_to(pos) < max(22.0, cell_size * 0.34):
+				return sig_pos
+	for sig_pos in signals.keys():
+		if _grid_to_screen(sig_pos).distance_to(pos) < max(18.0, cell_size * 0.28):
 			return sig_pos
 	return Vector2i(-999, -999)
+
+func _signal_placement_cell(click_pos: Vector2, fallback: Vector2i) -> Vector2i:
+	var radius: float = max(22.0, cell_size * 0.34)
+	for target in erased_signal_targets:
+		var target_pos: Vector2i = target.get("pos", Vector2i(-999, -999))
+		var center: Vector2 = target.get("center", Vector2.INF)
+		if target_pos.x > -900 and tracks.has(target_pos) and center.distance_to(click_pos) <= radius:
+			return target_pos
+	return fallback
+
+func _remember_erased_signal_targets(pos: Vector2i) -> void:
+	if not signals.has(pos):
+		return
+	for dir in _signal_dirs(pos):
+		erased_signal_targets.append({
+			"pos": pos,
+			"center": _signal_gate_center(pos, dir)
+		})
+	erased_signal_targets.append({
+		"pos": pos,
+		"center": _grid_to_screen(pos)
+	})
+	while erased_signal_targets.size() > 24:
+		erased_signal_targets.pop_front()
+
+func _clear_erased_signal_target(pos: Vector2i) -> void:
+	for i in range(erased_signal_targets.size() - 1, -1, -1):
+		if erased_signal_targets[i].get("pos", Vector2i(-999, -999)) == pos:
+			erased_signal_targets.remove_at(i)
+
+func _station_add_handle_center(station_pos: Vector2i) -> Vector2:
+	return _grid_to_screen(station_pos) + Vector2(cell_size * 0.48, -cell_size * 0.48)
+
+func _hit_line_stop_add_station(pos: Vector2) -> String:
+	if not editing_line_stops:
+		return ""
+	var radius: float = max(14.0, cell_size * 0.24)
+	for station_id in station_by_id.keys():
+		var st: Dictionary = station_by_id[station_id]
+		if _station_add_handle_center(st["pos"]).distance_to(pos) <= radius:
+			return String(station_id)
+	return ""
 
 func _signal_type(pos: Vector2i) -> String:
 	var signal_value: Variant = signals.get(pos, "")
@@ -852,8 +988,10 @@ func _opposite_dir(dir: Vector2i) -> Vector2i:
 	return Vector2i(-dir.x, -dir.y)
 
 func _signal_dir_map(pos: Vector2i) -> Dictionary:
-	var signal_value: Variant = signals.get(pos, {})
 	var dir_map: Dictionary = {}
+	if not signals.has(pos):
+		return dir_map
+	var signal_value: Variant = signals.get(pos, {})
 	if typeof(signal_value) == TYPE_DICTIONARY:
 		var data: Dictionary = signal_value
 		if data.has("dirs"):
@@ -900,16 +1038,7 @@ func _pair_signal_type_for(pos: Vector2i) -> String:
 		return _signal_type(pos)
 	return "block"
 
-func _default_signal_dir(pos: Vector2i) -> Vector2i:
-	for n in _track_neighbors(pos):
-		var d: Vector2i = n - pos
-		if d != Vector2i.ZERO:
-			return d
-	return Vector2i.RIGHT
-
-func _rotate_signal_at(pos: Vector2i) -> void:
-	if not signals.has(pos):
-		return
+func _signal_direction_options(pos: Vector2i) -> Array[Vector2i]:
 	var options: Array[Vector2i] = []
 	for n in _track_neighbors(pos):
 		var d: Vector2i = n - pos
@@ -917,6 +1046,37 @@ func _rotate_signal_at(pos: Vector2i) -> void:
 			options.append(d)
 	if options.is_empty():
 		options = DIRS.duplicate()
+	return options
+
+func _paired_signal_dirs(pos: Vector2i) -> Array[Vector2i]:
+	var options := _signal_direction_options(pos)
+	var current: Vector2i = _signal_dir(pos)
+	var dirs: Array[Vector2i] = []
+	if options.has(current):
+		dirs.append(current)
+	for dir in options:
+		if not dirs.has(dir):
+			dirs.append(dir)
+	return dirs
+
+func _toggle_signal_pair_state(pos: Vector2i, signal_type: String) -> void:
+	var dir := _signal_dir(pos)
+	if _signal_dirs(pos).size() > 1:
+		_replace_signal_set(pos, signal_type, [dir])
+		local_message = "%s signal set to single. Use Rotate Sig to change facing." % signal_type.capitalize()
+	else:
+		_replace_signal_set(pos, signal_type, _paired_signal_dirs(pos))
+		local_message = "%s signal set to paired. It now protects each connected rail direction." % signal_type.capitalize()
+	selected_signal_pos = pos
+	_compute_blocks()
+
+func _default_signal_dir(pos: Vector2i) -> Vector2i:
+	return _signal_direction_options(pos)[0]
+
+func _rotate_signal_at(pos: Vector2i) -> void:
+	if not signals.has(pos):
+		return
+	var options := _signal_direction_options(pos)
 	var current: Vector2i = _signal_dir(pos)
 	var idx: int = options.find(current)
 	var next_dir: Vector2i = options[(idx + 1) % options.size()] if idx >= 0 else options[0]
@@ -952,6 +1112,18 @@ func _dir_name(dir: Vector2i) -> String:
 	if dir == Vector2i(-1, -1):
 		return "northwest"
 	return "east"
+
+func _dir_screen_name(dir: Vector2i) -> String:
+	var cardinal := _dir_name(dir)
+	if dir.x > 0:
+		cardinal += " / right"
+	elif dir.x < 0:
+		cardinal += " / left"
+	if dir.y > 0:
+		cardinal += " / down"
+	elif dir.y < 0:
+		cardinal += " / up"
+	return cardinal
 
 func _track_key(p: Vector2i) -> String:
 	return "%d,%d" % [p.x, p.y]
@@ -1082,6 +1254,7 @@ func _erase_path(from_cell: Vector2i, to_cell: Vector2i) -> void:
 			erased += 1
 	for p in path:
 		if signals.has(p):
+			_remember_erased_signal_targets(p)
 			signals.erase(p)
 			erased += 1
 		if not station_by_pos.has(p) and _tile_has_train(p, "") == "" and not _track_tile_has_segments(p):
@@ -1094,6 +1267,7 @@ func _erase_path(from_cell: Vector2i, to_cell: Vector2i) -> void:
 
 func _erase_signal_or_track(gp: Vector2i) -> void:
 	if signals.has(gp):
+		_remember_erased_signal_targets(gp)
 		signals.erase(gp)
 		selected_signal_pos = Vector2i(-999, -999)
 		local_message = "Signal removed. Track remains."
@@ -1114,6 +1288,8 @@ func _erase_track(gp: Vector2i) -> void:
 			local_message = "Stations are fixed contract points."
 		return
 	if tracks.erase(gp):
+		if signals.has(gp):
+			_remember_erased_signal_targets(gp)
 		signals.erase(gp)
 		local_message = "Track removed."
 		_compute_blocks()
@@ -1129,19 +1305,19 @@ func _place_signal(gp: Vector2i, signal_type: String) -> void:
 	var money_cost := 120 if signal_type == "chain" else 80
 	if signals.has(gp):
 		if _signal_type(gp) == signal_type:
-			selected_signal_pos = gp
-			local_message = "%s signal selected. Use Rotate Sig to change facing." % signal_type.capitalize()
+			_toggle_signal_pair_state(gp, signal_type)
 			return
 		_replace_signal_set(gp, signal_type, _signal_dirs(gp))
 		selected_signal_pos = gp
-		local_message = "Signal changed to %s. Use Rotate Sig to change facing." % signal_type
+		local_message = "Signal changed to %s. Click again to toggle single or double." % signal_type
 		_compute_blocks()
 		return
 	if _spend(money_cost, material_cost):
+		_clear_erased_signal_target(gp)
 		_set_signal(gp, signal_type, _default_signal_dir(gp))
 		selected_signal_pos = gp
 		local["infra_cost"] += money_cost
-		local_message = "%s signal placed facing %s. Use Rotate Sig to change facing." % [signal_type.capitalize(), _dir_name(_signal_dir(gp))]
+		local_message = "%s signal placed facing %s. Click it again to make it double." % [signal_type.capitalize(), _dir_name(_signal_dir(gp))]
 		_compute_blocks()
 
 func _place_signal_pair(gp: Vector2i, signal_type: String) -> void:
@@ -1150,39 +1326,24 @@ func _place_signal_pair(gp: Vector2i, signal_type: String) -> void:
 		return
 	var material_cost := 1 if signal_type == "chain" else 0
 	var money_cost := 210 if signal_type == "chain" else 140
-	var dir := _signal_dir(gp) if signals.has(gp) else _default_signal_dir(gp)
 	if signals.has(gp):
 		if _signal_type(gp) == signal_type and _signal_dirs(gp).size() > 1:
 			selected_signal_pos = gp
 			local_message = "Paired %s signal selected. Rotate Sig changes the protected axis." % signal_type
 			return
-		_replace_signal_set(gp, signal_type, [dir, _opposite_dir(dir)])
+		_replace_signal_set(gp, signal_type, _paired_signal_dirs(gp))
 		selected_signal_pos = gp
 		local_message = "Paired %s signal set. Rotate Sig changes the protected axis." % signal_type
 		_compute_blocks()
 		return
 	if _spend(money_cost, material_cost):
-		_replace_signal_set(gp, signal_type, [dir, _opposite_dir(dir)])
+		_clear_erased_signal_target(gp)
+		_set_signal(gp, signal_type, _default_signal_dir(gp))
+		_replace_signal_set(gp, signal_type, _paired_signal_dirs(gp))
 		selected_signal_pos = gp
 		local["infra_cost"] += money_cost
 		local_message = "Paired %s signal placed. It protects both directions on this rail." % signal_type
 		_compute_blocks()
-
-func _build_passing_loop() -> void:
-	var mid := Vector2i(6, 4)
-	if local.get("kind", "") == "yard":
-		mid = Vector2i(6, 5)
-	if not _spend(250, 0):
-		return
-	local["infra_cost"] += 250
-	_force_track_path([mid + Vector2i(-1, 0), mid + Vector2i(-1, -1), mid + Vector2i(0, -1), mid + Vector2i(1, -1), mid + Vector2i(1, 0)])
-	_force_track_path([mid + Vector2i(-1, 0), mid, mid + Vector2i(1, 0)])
-	_set_signal(mid + Vector2i(-1, 0), "block", Vector2i.RIGHT)
-	_set_signal(mid + Vector2i(1, -1), "block", Vector2i.LEFT)
-	local_message = "Passing loop added. It gives opposing trains a place to clear the main line."
-	_compute_blocks()
-	_refresh_local_side_text()
-	queue_redraw()
 
 func _add_platform() -> void:
 	var target_id: String = "central_yard" if local.get("kind", "") == "yard" and station_by_id.has("central_yard") else ""
@@ -1323,6 +1484,15 @@ func _toggle_signal_help() -> void:
 	_refresh_local_side_text()
 	queue_redraw()
 
+func _toggle_planning_guide() -> void:
+	planning_guide_open = not planning_guide_open
+	if planning_guide_open:
+		local_message = "Planning guide shown. Treat it as one proven pattern, then adapt it to your own network."
+	else:
+		local_message = "Planning guide hidden. Use train status, queues, and block colors to tune your design."
+	_refresh_local_side_text()
+	queue_redraw()
+
 func _line_train_count(line_id: String) -> int:
 	var count := 0
 	for t in trains:
@@ -1434,10 +1604,25 @@ func _toggle_line_stop_edit() -> void:
 	editing_line_stops = not editing_line_stops
 	if editing_line_stops:
 		selected_tool = "line"
-		local_message = "Editing %s stops. Click stations in the order trains should visit them." % lines[selected_line_id]["name"]
+		local_message = "Editing %s stops. Tap station plus signs in the order trains should visit them." % lines[selected_line_id]["name"]
 	else:
 		selected_tool = "track"
 		local_message = "Stop editing finished for %s." % lines[selected_line_id]["name"]
+	_refresh_tool_button_styles()
+	_refresh_local_side_text()
+	queue_redraw()
+
+func _complete_line_stop_edit() -> void:
+	if selected_line_id == "" or not lines.has(selected_line_id):
+		local_message = "Select or create a line before completing it."
+		_refresh_local_side_text()
+		return
+	editing_line_stops = false
+	selected_tool = "track"
+	if _line_has_valid_orders(selected_line_id):
+		local_message = "%s complete. Assign trains when ready." % lines[selected_line_id]["name"]
+	else:
+		local_message = "%s needs at least two stops before trains can run." % lines[selected_line_id]["name"]
 	_refresh_tool_button_styles()
 	_refresh_local_side_text()
 	queue_redraw()
@@ -1451,7 +1636,7 @@ func _clear_selected_line_stops() -> void:
 	_reapply_line_to_assigned_trains(selected_line_id)
 	editing_line_stops = true
 	selected_tool = "line"
-	local_message = "%s stops cleared. Click stations to add stops in order." % lines[selected_line_id]["name"]
+	local_message = "%s stops cleared. Tap station plus signs to add stops in order." % lines[selected_line_id]["name"]
 	_refresh_tool_button_styles()
 	_refresh_local_side_text()
 	queue_redraw()
@@ -1461,7 +1646,7 @@ func _append_station_to_selected_line_at(gp: Vector2i) -> void:
 		local_message = "Select a line before adding stops."
 		return
 	if not station_by_pos.has(gp):
-		local_message = "Click station buildings to add line stops."
+		local_message = "Tap station plus signs to add line stops."
 		return
 	var station_id: String = station_by_pos[gp]
 	var route: Array = lines[selected_line_id].get("route", [])
@@ -1510,7 +1695,7 @@ func _line_cargo_preview(line_id: String) -> String:
 	var line: Dictionary = lines[line_id]
 	var text := "[b]%s[/b]\nOrders: %s\n" % [line["name"], _route_station_names(route) if not route.is_empty() else "No stops yet"]
 	if editing_line_stops and line_id == selected_line_id:
-		text += "Editing: click stations on the map to append stops.\n"
+		text += "Editing: tap station plus signs on the map, then use Complete Line.\n"
 	if route.size() < 2:
 		text += "Needs at least two stops before trains can run.\n"
 		text += "Assigned trains: %d\nAvailable trains: %d" % [_line_train_count(line_id), _available_train_count()]
@@ -1837,7 +2022,7 @@ func _update_train(t: Dictionary, delta: float) -> void:
 		return
 	if float(t.get("dwell", 0.0)) > 0.0:
 		t["dwell"] = max(0.0, float(t["dwell"]) - delta)
-		t["state"] = "Loading" if t.get("cargo_amount", 0) == 0 else "Unloading"
+		t["state"] = String(t.get("dwell_state", "Loading" if t.get("cargo_amount", 0) == 0 else "Unloading"))
 		return
 	if (t["path"] as Array).is_empty() or int(t["path_index"]) >= (t["path"] as Array).size():
 		if t.get("state", "") == "NoRoute":
@@ -1876,6 +2061,7 @@ func _handle_station_arrival(t: Dictionary) -> void:
 	if station_by_pos.has(tile):
 		var st_id: String = station_by_pos[tile]
 		var st: Dictionary = station_by_id[st_id]
+		var cargo_before: int = int(t.get("cargo_amount", 0))
 		_process_cargo_at_station(t, st)
 		if t.get("reset_to_source", false):
 			var source_station: Dictionary = station_by_id[t["route"][0]]
@@ -1887,14 +2073,28 @@ func _handle_station_arrival(t: Dictionary) -> void:
 			t["reset_to_source"] = false
 			t["handled_yard"] = false
 			_process_cargo_at_station(t, source_station)
+			t["dwell_state"] = "Loading"
 			_plan_next_path(t)
 			return
 		t["dwell"] = 0.8
-		t["state"] = "Loading" if t.get("cargo_amount", 0) == 0 else "Unloading"
+		t["dwell_state"] = _station_dwell_state(t, st, cargo_before)
+		t["state"] = String(t["dwell_state"])
 		t["handled_yard"] = false
 		t["stop_index"] = (int(t["stop_index"]) + 1) % (t["route"] as Array).size()
 		_skip_current_station_target(t, tile)
 	_plan_next_path(t)
+
+func _station_dwell_state(t: Dictionary, st: Dictionary, cargo_before: int) -> String:
+	var role := String(st.get("role", ""))
+	if role == "yard":
+		return "YardStop"
+	if role == "source" and int(t.get("cargo_amount", 0)) > cargo_before:
+		return "Loading"
+	if role == "sink" and cargo_before > int(t.get("cargo_amount", 0)):
+		return "Unloading"
+	if role == "processor":
+		return "Processing"
+	return "StationStop"
 
 func _skip_current_station_target(t: Dictionary, tile: Vector2i) -> void:
 	var route: Array = t["route"]
@@ -1985,10 +2185,10 @@ func _route_failure_reason(start: Vector2i, goal: Vector2i) -> String:
 	for next in physical_path:
 		if _signal_controls_departure(current) and not _signal_faces_movement(current, next):
 			var needed_dir: Vector2i = next - current
-			return "Signal at %s faces %s but this train needs %s. Rotate it or use Pair for two-way running." % [
+			return "Signal at %s only opens %s, but this train needs %s. Follow the bright arrow on the gate: rotate it, or click it with the signal tool again to make it double." % [
 				_tile_label(current),
-				_dir_name(_signal_dir(current)),
-				_dir_name(needed_dir)
+				_dir_screen_name(_signal_dir(current)),
+				_dir_screen_name(needed_dir)
 			]
 		current = next
 	return "No legal route reaches %s. Check one-way signal directions or missing explicit track segments." % _tile_label(goal)
@@ -2002,7 +2202,7 @@ func _find_track_path_ignore_signals(start: Vector2i, goal: Vector2i) -> Array[V
 		var current: Vector2i = frontier.pop_front()
 		if current == goal:
 			break
-		for n in _track_neighbors(current):
+		for n in _track_neighbors_toward(current, goal):
 			if not came_from.has(n):
 				came_from[n] = current
 				frontier.append(n)
@@ -2026,16 +2226,17 @@ func _find_path(start: Vector2i, goal: Vector2i, own_id: String = "") -> Array:
 		return []
 	var frontier: Array[Vector2i] = [start]
 	var came_from: Dictionary = {start: start}
+	var cost_so_far: Dictionary = {start: 0.0}
 	while not frontier.is_empty():
-		var current: Vector2i = frontier.pop_front()
+		var current: Vector2i = _pop_lowest_cost(frontier, cost_so_far)
 		if current == goal:
 			break
-		for n in _track_neighbors(current):
+		for n in _track_neighbors_toward(current, goal):
 			if _signal_controls_departure(current) and not _signal_faces_movement(current, n):
 				continue
-			if own_id != "" and n != goal and _tile_has_train(n, own_id) != "":
-				continue
-			if not came_from.has(n):
+			var new_cost: float = float(cost_so_far[current]) + _path_step_cost(n, current, goal, own_id)
+			if not cost_so_far.has(n) or new_cost < float(cost_so_far[n]):
+				cost_so_far[n] = new_cost
 				came_from[n] = current
 				frontier.append(n)
 	if not came_from.has(goal):
@@ -2047,8 +2248,31 @@ func _find_path(start: Vector2i, goal: Vector2i, own_id: String = "") -> Array:
 		p = came_from[p]
 	return path
 
+func _pop_lowest_cost(frontier: Array[Vector2i], cost_so_far: Dictionary) -> Vector2i:
+	var best_index := 0
+	var best_cost := float(cost_so_far.get(frontier[0], 0.0))
+	for i in range(1, frontier.size()):
+		var candidate_cost := float(cost_so_far.get(frontier[i], 0.0))
+		if candidate_cost < best_cost:
+			best_index = i
+			best_cost = candidate_cost
+	return frontier.pop_at(best_index)
+
+func _path_step_cost(next_tile: Vector2i, current: Vector2i, goal: Vector2i, own_id: String) -> float:
+	var cost := 1.0 + _path_step_score(next_tile, current, goal) * 0.01
+	if own_id != "":
+		if next_tile != goal and _tile_has_train(next_tile, own_id) != "":
+			cost += 30.0
+		var reserved_by := _tile_reserved_by_other(next_tile, own_id)
+		if reserved_by != "":
+			cost += 18.0
+		var block_id := int(block_for_tile.get(next_tile, -1))
+		if block_id >= 0 and _block_occupied_by_other(block_id, own_id) != "":
+			cost += 8.0
+	return cost
+
 func _signal_controls_departure(pos: Vector2i) -> bool:
-	return signals.has(pos) and not station_by_pos.has(pos)
+	return signals.has(pos)
 
 func _refresh_reservations() -> void:
 	tile_reservations.clear()
@@ -2058,17 +2282,69 @@ func _refresh_reservations() -> void:
 		var train_id := String(t.get("id", ""))
 		var path: Array = t.get("path", [])
 		var start_index := int(t.get("path_index", 0))
-		var lookahead: int = min(path.size(), start_index + 5)
+		if _signal_departure_has_actual_blocker(t, path, start_index):
+			continue
+		var lookahead: int = _reservation_lookahead(t, path, start_index)
+		var claim: Array[Vector2i] = []
+		var claim_conflicts := false
 		for i in range(start_index, lookahead):
 			var p: Vector2i = path[i]
 			if _tile_has_train(p, train_id) != "":
+				claim_conflicts = true
 				break
 			var reserved_by := String(tile_reservations.get(p, ""))
 			if reserved_by != "" and reserved_by != train_id:
+				claim_conflicts = true
 				break
-			tile_reservations[p] = train_id
+			claim.append(p)
 			if i > start_index and (signals.has(p) or station_by_pos.has(p)):
 				break
+		if claim_conflicts:
+			continue
+		for p in claim:
+			tile_reservations[p] = train_id
+
+func _reservation_lookahead(t: Dictionary, path: Array, start_index: int) -> int:
+	if path.is_empty() or start_index >= path.size():
+		return start_index
+	var default_lookahead: int = min(path.size(), start_index + 5)
+	var cur: Vector2i = t["tile"]
+	if not _signal_controls_departure(cur):
+		return default_lookahead
+	var next_tile: Vector2i = path[start_index]
+	if not _signal_faces_movement(cur, next_tile):
+		return default_lookahead
+	var sig_type: String = _signal_type_for_dir(cur, next_tile - cur)
+	var signal_lookahead: int = default_lookahead
+	for i in range(start_index, min(path.size(), start_index + 10)):
+		signal_lookahead = i + 1
+		var p: Vector2i = path[i]
+		if i > start_index and (station_by_pos.has(p) or (sig_type != "chain" and signals.has(p))):
+			break
+	return signal_lookahead
+
+func _signal_departure_has_actual_blocker(t: Dictionary, path: Array, start_index: int) -> bool:
+	if path.is_empty() or start_index >= path.size():
+		return false
+	var cur: Vector2i = t["tile"]
+	if not _signal_controls_departure(cur):
+		return false
+	var next_tile: Vector2i = path[start_index]
+	if not _signal_faces_movement(cur, next_tile):
+		return true
+	var sig_type: String = _signal_type_for_dir(cur, next_tile - cur)
+	var scan_limit: int = path.size() if sig_type == "block" else min(path.size(), start_index + 7)
+	for i in range(start_index, scan_limit):
+		var p: Vector2i = path[i]
+		var blocker := _tile_entry_blocker(p, String(t["id"]))
+		if blocker != "":
+			return true
+		var reserved_by := _tile_reserved_by_other(p, String(t["id"]))
+		if reserved_by != "":
+			return true
+		if i > start_index and (station_by_pos.has(p) or (sig_type != "chain" and signals.has(p))):
+			break
+	return false
 
 func _tile_reserved_by_other(tile: Vector2i, own_id: String) -> String:
 	var reserved_by := String(tile_reservations.get(tile, ""))
@@ -2093,7 +2369,10 @@ func _can_enter_next_tile(t: Dictionary, next_tile: Vector2i) -> bool:
 		t["dir"] = direction.normalized()
 	if _signal_controls_departure(cur) and not _signal_faces_movement(cur, next_tile):
 		t["state"] = "WaitingAtSignal"
-		t["wait_reason"] = "Signal faces the other way. Rotate it or place a paired signal for two-way running."
+		t["wait_reason"] = "Signal only opens %s, but this train needs %s. Follow the bright arrow on the gate: rotate it or click it with the signal tool again to make it double." % [
+			_dir_screen_name(_signal_dir(cur)),
+			_dir_screen_name(next_tile - cur)
+		]
 		return false
 	if _signal_controls_departure(cur) and _signal_faces_movement(cur, next_tile):
 		var sig_type: String = _signal_type_for_dir(cur, next_tile - cur)
@@ -2138,7 +2417,7 @@ func _chain_signal_blocker(t: Dictionary) -> String:
 		var reserved_by := _tile_reserved_by_other(p, t["id"])
 		if reserved_by != "":
 			return "Chain signal is red: exit path is reserved by %s." % reserved_by
-		if i > int(t["path_index"]) and (signals.has(p) or station_by_pos.has(p)):
+		if i > int(t["path_index"]) and station_by_pos.has(p):
 			break
 	return ""
 
@@ -2175,14 +2454,23 @@ func _tile_entry_blocker(tile: Vector2i, own_id: String) -> String:
 	return blocker
 
 func _block_occupied_by_other(block_id: int, own_id: String) -> String:
+	var occupants := _block_occupants(block_id, own_id)
+	return occupants[0] if not occupants.is_empty() else ""
+
+func _block_occupants(block_id: int, own_id: String = "") -> Array[String]:
+	var occupants: Array[String] = []
 	if block_id < 0:
-		return ""
+		return occupants
 	for t in trains:
 		if not _is_train_on_map(t):
 			continue
 		if t["id"] != own_id and int(block_for_tile.get(t["tile"], -2)) == block_id:
-			return t["id"]
-	return ""
+			occupants.append(String(t["id"]))
+	return occupants
+
+func _deadlock_progress_grace() -> float:
+	var grid: Vector2i = local.get("scenario", {}).get("grid", Vector2i(14, 9))
+	return max(8.0, float(grid.x) * 0.9)
 
 func _detect_congestion(delta: float) -> void:
 	var queue := 0
@@ -2191,7 +2479,7 @@ func _detect_congestion(delta: float) -> void:
 			queue += 1
 	local["max_queue"] = max(int(local.get("max_queue", 0)), queue)
 	deadlock_cooldown = max(0.0, deadlock_cooldown - delta)
-	if queue >= 2 and elapsed_since_progress > 8.0 and deadlock_cooldown <= 0.0:
+	if queue >= 2 and elapsed_since_progress > _deadlock_progress_grace() and deadlock_cooldown <= 0.0:
 		local["deadlocks"] = int(local.get("deadlocks", 0)) + 1
 		deadlock_cooldown = 10.0
 		local_message = "Deadlock detected. Replace junction entry block signals with chain signals or add an exit path."
@@ -2301,6 +2589,29 @@ func _track_neighbors(p: Vector2i) -> Array[Vector2i]:
 			out.append(n)
 	return out
 
+func _track_neighbors_toward(p: Vector2i, goal: Vector2i) -> Array[Vector2i]:
+	var out := _track_neighbors(p)
+	var sorted: Array[Vector2i] = []
+	for n in out:
+		var inserted := false
+		for i in range(sorted.size()):
+			if _path_step_score(n, p, goal) < _path_step_score(sorted[i], p, goal):
+				sorted.insert(i, n)
+				inserted = true
+				break
+		if not inserted:
+			sorted.append(n)
+	return sorted
+
+func _path_step_score(next_tile: Vector2i, current: Vector2i, goal: Vector2i) -> float:
+	var to_goal := Vector2(goal - next_tile)
+	var step := Vector2(next_tile - current)
+	var direct := Vector2(goal - current)
+	var score := to_goal.length_squared()
+	if direct.length_squared() > 0.0 and step.length_squared() > 0.0:
+		score -= step.normalized().dot(direct.normalized()) * 0.25
+	return score
+
 func _screen_to_grid(p: Vector2) -> Vector2i:
 	_update_board_layout()
 	return Vector2i(int(floor((p.x - grid_origin.x) / cell_size)), int(floor((p.y - grid_origin.y) / cell_size)))
@@ -2360,27 +2671,32 @@ func _refresh_local_side_text() -> void:
 	text += "Depot stock: %d available\n" % _available_train_count()
 	text += "Average wait target: %.0fs\n\n" % float(local.get("wait_target", 0.0))
 	if scenario.get("briefing", "") != "":
-		text += "[b]Lesson[/b]\n%s\n\n" % scenario["briefing"]
+		text += "[b]Contract Brief[/b]\n%s\n\n" % scenario["briefing"]
+	if scenario.get("guide_label", "") != "":
+		var guide_state := "shown" if planning_guide_open else "hidden"
+		text += "[b]Planning Guide[/b]\n%s It is currently %s.\n\n" % [scenario["guide_label"], guide_state]
 	text += "[b]Signals[/b]\n"
 	text += "Block: use on straight track after stations or junction exits. Green means the next section is clear.\n"
 	text += "Chain: use before a junction. Green means the train can enter and also leave the junction.\n"
-	text += "Pair: use on two-way track when trains may travel both directions through the same tile. Click an existing chain signal with Pair to make a paired chain.\n"
+	text += "Double: click an existing block or chain signal again to protect both directions on that rail tile.\n"
 	text += "Right-hand running: on double track, route eastbound trains on the lower/south rail and westbound trains on the upper/north rail.\n"
 	if signal_help_open:
 		text += "Signal Help: colored rail sections are blocks. Red sections contain a train or a reserved path. Click a signal to see exactly what it faces.\n"
 	text += "\n"
 	text += "[b]Message[/b]\n%s\n\n" % local_message
-	text += "[b]Controls[/b]\nDrag Track to draw rail. Create/select a line, Edit Stops, then click stations in order. Assign depot trains to finished lines. Signal Help shows blocks. Restart Trains keeps infrastructure; Reset Map clears it.\n\n"
+	text += "[b]Controls[/b]\nDrag Track to draw rail. Create/select a line, Edit Stops, tap station plus signs, then Complete Line. Assign depot trains to finished lines. Plan Guide shows one possible layout. Signal Help shows blocks. Restart Trains keeps infrastructure; Reset Map clears it.\n\n"
 	if selected_train_id != "":
 		for t in trains:
 			if t["id"] == selected_train_id:
-				text += "[b]%s[/b]\nState: %s\nCargo: %s %d/%d\nReason: %s\nSuggestion: %s\n\n" % [
+				text += "[b]%s[/b]\nState: %s\nCargo: %s %d/%d\nNext stop: %s\nNext rail leg: %s\nReason: %s\nSuggestion: %s\n\n" % [
 					t["name"],
 					t["state"],
 					t.get("cargo", "none") if t.get("cargo", "") != "" else "none",
 					t.get("cargo_amount", 0),
 					t.get("capacity", 0),
-					t.get("wait_reason", "Moving normally."),
+					_next_stop_name_for_train(t),
+					_next_leg_name_for_train(t),
+					_display_reason_for_train(t),
 					_suggestion_for_train(t)
 				]
 				if String(t.get("line_id", "")) != "" and lines.has(t["line_id"]):
@@ -2396,8 +2712,8 @@ func _refresh_local_side_text() -> void:
 
 func _suggestion_for_train(t: Dictionary) -> String:
 	var reason := String(t.get("wait_reason", ""))
-	if reason.contains("faces") and reason.contains("needs"):
-		return "Rotate that signal to the needed direction, or use Pair if trains must run both ways."
+	if (reason.contains("faces") or reason.contains("only opens")) and reason.contains("needs"):
+		return "Rotate that signal to the needed direction, or click it with the signal tool again if trains must run both ways."
 	if reason.contains("No valid route"):
 		return "Connect every stop on the route with orthogonal track."
 	if reason.contains("No connected rail"):
@@ -2410,6 +2726,57 @@ func _suggestion_for_train(t: Dictionary) -> String:
 		return "Add siding space or reduce the number of trains."
 	return "Keep cargo flowing and watch for red signals."
 
+func _next_stop_name_for_train(t: Dictionary) -> String:
+	var route: Array = t.get("route", [])
+	if route.is_empty():
+		return "none"
+	var stop_index := int(t.get("stop_index", 0))
+	if stop_index < 0 or stop_index >= route.size():
+		return "none"
+	var station_id := String(route[stop_index])
+	if not station_by_id.has(station_id):
+		return station_id
+	return String(station_by_id[station_id].get("name", station_id))
+
+func _next_leg_name_for_train(t: Dictionary) -> String:
+	if not _is_train_on_map(t):
+		return "waiting for platform"
+	var cur: Vector2i = t.get("tile", _off_map_tile())
+	var path: Array = t.get("path", [])
+	var path_index := int(t.get("path_index", 0))
+	if path_index >= 0 and path_index < path.size():
+		var next_tile: Vector2i = path[path_index]
+		return _dir_screen_name(next_tile - cur)
+	var route: Array = t.get("route", [])
+	if route.is_empty():
+		return "none"
+	var stop_index := int(t.get("stop_index", 0))
+	if stop_index < 0 or stop_index >= route.size():
+		return "none"
+	var station_id := String(route[stop_index])
+	if not station_by_id.has(station_id):
+		return "none"
+	var target_station: Dictionary = station_by_id[station_id]
+	var physical_path := _find_track_path_ignore_signals(cur, target_station["pos"])
+	if physical_path.is_empty():
+		return "no connected rail"
+	return _dir_screen_name(physical_path[0] - cur)
+
+func _display_reason_for_train(t: Dictionary) -> String:
+	var state := String(t.get("state", ""))
+	var reason := String(t.get("wait_reason", ""))
+	if reason == "":
+		if state == "YardStop":
+			return "Working through the yard stop."
+		if state in ["Loading", "Unloading", "Processing", "StationStop"]:
+			return "Station dwell in progress."
+		return "Moving normally."
+	if state == "YardStop":
+		return "Working through the yard stop. Next move: %s" % reason
+	if state in ["Loading", "Unloading", "Processing", "StationStop"]:
+		return "Station dwell in progress. Next move: %s" % reason
+	return reason
+
 func _signal_summary(pos: Vector2i) -> String:
 	var summaries: Array[String] = []
 	for dir in _signal_dirs(pos):
@@ -2421,9 +2788,9 @@ func _signal_summary(pos: Vector2i) -> String:
 				blocker = _block_occupied_by_other(bid, "")
 		var protected := "/".join(parts) if not parts.is_empty() else "none"
 		if blocker == "":
-			summaries.append("%s green: %s clear" % [_dir_name(dir), protected])
+			summaries.append("opens %s, green: %s clear" % [_dir_screen_name(dir), protected])
 		else:
-			summaries.append("%s red: %s blocked by %s" % [_dir_name(dir), protected, blocker])
+			summaries.append("opens %s, red: %s blocked by %s" % [_dir_screen_name(dir), protected, blocker])
 	return "; ".join(summaries)
 
 func _signal_use_text(pos: Vector2i) -> String:
@@ -2450,7 +2817,7 @@ func _draw() -> void:
 func _draw_regional() -> void:
 	if art_texture:
 		draw_texture_rect(art_texture, Rect2(Vector2(size.x - 520, size.y - 500), Vector2(450, 450)), false, Color(1, 1, 1, 0.32))
-	var ids := ["coal_valley", "central_yard", "steelworks"]
+	var ids := ["coal_valley", "central_yard", "steelworks", "overtake_pass"]
 	for i in range(ids.size() - 1):
 		_draw_piece(game_track_texture, (_regional_node_position(ids[i]) + _regional_node_position(ids[i + 1])) * 0.5, Vector2(330, 74), 0.0, Color(1, 1, 1, 0.72))
 	for s in scenarios:
@@ -2514,10 +2881,49 @@ func _draw_train_cargo_badge(t: Dictionary, center: Vector2) -> void:
 	draw_string(font, badge_pos + Vector2(0, badge_size.y - 6.0), badge_text, HORIZONTAL_ALIGNMENT_CENTER, badge_size.x, int(max(12.0, cell_size * 0.22)), Color.html("#172028"))
 
 func _show_signal_debug_overlay() -> bool:
-	return signal_help_open or local.get("kind", "") == "yard" or selected_tool in ["block", "chain", "pair"] or selected_signal_pos.x > -900
+	return signal_help_open or selected_tool in ["block", "chain", "pair"] or selected_signal_pos.x > -900 or _selected_train_waiting_on_signal() or not _selected_train_signal_issue().is_empty()
+
+func _selected_train_waiting_on_signal() -> bool:
+	if selected_train_id == "":
+		return false
+	for t in trains:
+		if t["id"] == selected_train_id:
+			return String(t.get("state", "")) == "WaitingAtSignal"
+	return false
+
+func _selected_train_signal_issue() -> Dictionary:
+	if selected_train_id == "":
+		return {}
+	for t in trains:
+		if t["id"] != selected_train_id:
+			continue
+		var cur: Vector2i = t["tile"]
+		var path: Array = t.get("path", [])
+		var path_index := int(t.get("path_index", 0))
+		if _signal_controls_departure(cur) and path_index < path.size():
+			var next_tile: Vector2i = path[path_index]
+			if not _signal_faces_movement(cur, next_tile):
+				return {"pos": cur, "needed": next_tile - cur}
+		var route: Array = t.get("route", [])
+		if route.is_empty():
+			return {}
+		var stop_index := int(t.get("stop_index", 0))
+		if stop_index < 0 or stop_index >= route.size():
+			return {}
+		var station_id := String(route[stop_index])
+		if not station_by_id.has(station_id):
+			return {}
+		var target_station: Dictionary = station_by_id[station_id]
+		var physical_path := _find_track_path_ignore_signals(cur, target_station["pos"])
+		var current := cur
+		for next in physical_path:
+			if _signal_controls_departure(current) and not _signal_faces_movement(current, next):
+				return {"pos": current, "needed": next - current}
+			current = next
+	return {}
 
 func _block_has_occupant(block_id: int) -> bool:
-	return _block_occupied_by_other(block_id, "") != ""
+	return not _block_occupants(block_id).is_empty()
 
 func _signal_target_blocks(pos: Vector2i, dir: Vector2i = Vector2i.ZERO) -> Array[int]:
 	var targets: Array[int] = []
@@ -2562,13 +2968,17 @@ func _draw_local() -> void:
 		var gy := grid_origin.y + float(y) * cell_size
 		draw_line(Vector2(grid_origin.x, gy), Vector2(grid_origin.x + float(grid.x) * cell_size, gy), Color(0.28, 0.45, 0.32, 0.16), 1.0)
 	_draw_ghost_route()
-	_draw_blocks()
+	_draw_track_drag_preview()
 	_draw_tracks()
+	_draw_blocks()
 	_draw_stations()
 	_draw_signals()
+	_draw_train_route_hints()
 	_draw_trains()
 
 func _draw_ghost_route() -> void:
+	if not planning_guide_open:
+		return
 	var ghost: Array = local["scenario"].get("ghost", [])
 	for i in range(ghost.size() - 1):
 		var a: Vector2i = ghost[i]
@@ -2584,26 +2994,137 @@ func _draw_ghost_route() -> void:
 			var c := _grid_to_screen(p)
 			draw_circle(c, max(5.0, cell_size * 0.1), Color(0.4, 0.5, 0.45, 0.34))
 
+func _draw_track_drag_preview() -> void:
+	if not dragging or selected_tool not in ["track", "erase"]:
+		return
+	if not _is_in_grid(drag_start_cell) or not _is_in_grid(drag_hover_cell):
+		return
+	if drag_start_cell == drag_hover_cell:
+		return
+	var path := _grid_drag_path(drag_start_cell, drag_hover_cell)
+	var col := Color(0.22, 0.72, 1.0, 0.58)
+	var dot_col := Color(0.12, 0.52, 0.9, 0.78)
+	if selected_tool == "erase":
+		col = Color(1.0, 0.22, 0.16, 0.58)
+		dot_col = Color(0.9, 0.12, 0.08, 0.78)
+	for i in range(path.size() - 1):
+		var a: Vector2i = path[i]
+		var b: Vector2i = path[i + 1]
+		if not _is_in_grid(a) or not _is_in_grid(b):
+			continue
+		var ac := _grid_to_screen(a)
+		var bc := _grid_to_screen(b)
+		draw_line(ac, bc, col, max(6.0, cell_size * 0.11), true)
+	for p in path:
+		if _is_in_grid(p):
+			draw_circle(_grid_to_screen(p), max(4.0, cell_size * 0.08), dot_col)
+
 func _draw_blocks() -> void:
 	var debug := _show_signal_debug_overlay()
-	var alpha := 0.25 if debug else 0.12
-	var colors := [
-		Color(0.3, 0.7, 1, alpha),
-		Color(1, 0.7, 0.2, alpha),
-		Color(0.7, 0.4, 1, alpha),
-		Color(0.2, 0.8, 0.5, alpha),
-		Color(1.0, 0.35, 0.35, alpha),
-	]
+	if not debug:
+		return
+	var label_centers: Dictionary = {}
+	for key in track_segments.keys():
+		var points := _segment_points(String(key))
+		if points.size() != 2:
+			continue
+		var a: Vector2i = points[0]
+		var b: Vector2i = points[1]
+		var bid_a := int(block_for_tile.get(a, -1))
+		var bid_b := int(block_for_tile.get(b, -1))
+		if bid_a < 0 and bid_b < 0:
+			continue
+		var ac := _grid_to_screen(a)
+		var bc := _grid_to_screen(b)
+		if bid_a == bid_b:
+			_draw_block_segment(ac, bc, bid_a)
+			if not label_centers.has(bid_a):
+				label_centers[bid_a] = (ac + bc) * 0.5
+		else:
+			var mid := (ac + bc) * 0.5
+			if bid_a >= 0:
+				_draw_block_segment(ac, mid, bid_a)
+				if not label_centers.has(bid_a):
+					label_centers[bid_a] = (ac + mid) * 0.5
+			if bid_b >= 0:
+				_draw_block_segment(mid, bc, bid_b)
+				if not label_centers.has(bid_b):
+					label_centers[bid_b] = (mid + bc) * 0.5
+			_draw_block_boundary(mid)
 	for bid in blocks.keys():
-		var occupied := _block_has_occupant(int(bid))
-		for p in blocks[bid]:
-			var top_left := grid_origin + Vector2(float(p.x) * cell_size, float(p.y) * cell_size)
-			var tile_rect := Rect2(top_left + Vector2(5, 5), Vector2(cell_size - 10.0, cell_size - 10.0))
-			var block_color: Color = Color(1.0, 0.28, 0.18, 0.34) if occupied and debug else colors[int(bid) % colors.size()]
-			draw_rect(tile_rect, block_color)
-			if debug:
-				var border_color := Color.html("#e84242") if occupied else Color(0.04, 0.08, 0.1, 0.28)
-				draw_rect(tile_rect, border_color, false, 2.0 if occupied else 1.0)
+		if label_centers.has(int(bid)):
+			_draw_block_label(label_centers[int(bid)], int(bid))
+	for t in trains:
+		if not _is_train_on_map(t):
+			continue
+		var bid := int(block_for_tile.get(t["tile"], -1))
+		if bid >= 0 and not _block_occupants(bid).is_empty():
+			_draw_block_occupant_badge(t["tile"], String(t["id"]))
+
+func _draw_block_segment(a: Vector2, b: Vector2, block_id: int) -> void:
+	if a.distance_squared_to(b) <= 0.1:
+		return
+	var color := _block_debug_color(block_id)
+	var occupied := _block_has_occupant(block_id)
+	var reserved := _block_has_reservation(block_id)
+	if occupied:
+		color = Color.html("#ff4d3d")
+	elif reserved:
+		color = Color.html("#51a7ff")
+	var rail_width: float = max(8.0, cell_size * 0.13)
+	draw_line(a, b, Color(0.02, 0.04, 0.05, 0.72), rail_width + 5.0, true)
+	draw_line(a, b, Color(color.r, color.g, color.b, 0.82 if occupied else 0.68), rail_width, true)
+	if occupied or reserved:
+		var dash_dir := (b - a).normalized()
+		var side: Vector2 = Vector2(-dash_dir.y, dash_dir.x) * max(2.0, cell_size * 0.035)
+		draw_line(a + side, b + side, Color(1.0, 1.0, 1.0, 0.5), max(2.0, cell_size * 0.035), true)
+
+func _draw_block_boundary(center: Vector2) -> void:
+	var radius: float = max(5.0, cell_size * 0.08)
+	draw_circle(center, radius + 2.0, Color(0.02, 0.04, 0.05, 0.82))
+	draw_circle(center, radius, Color.html("#f7fbff"))
+
+func _draw_block_label(center: Vector2, block_id: int) -> void:
+	var label := "B%d" % block_id
+	var label_size := Vector2(max(28.0, cell_size * 0.43), max(17.0, cell_size * 0.25))
+	var rect := Rect2(center + Vector2(-label_size.x * 0.5, -cell_size * 0.36), label_size)
+	var fill := Color(0.96, 0.98, 1.0, 0.9)
+	if _block_has_occupant(block_id):
+		fill = Color.html("#ffbd4a")
+	elif _block_has_reservation(block_id):
+		fill = Color.html("#bfe0ff")
+	draw_rect(rect.grow(2.0), Color(0.02, 0.04, 0.05, 0.76))
+	draw_rect(rect, fill)
+	draw_rect(rect, Color(0.02, 0.04, 0.05, 0.82), false, 1.5)
+	draw_string(font, rect.position + Vector2(0, label_size.y - 4.0), label, HORIZONTAL_ALIGNMENT_CENTER, label_size.x, int(max(10.0, cell_size * 0.16)), Color.html("#172028"))
+
+func _block_debug_color(block_id: int) -> Color:
+	var colors := [
+		Color.html("#47b5ff"),
+		Color.html("#ffca4d"),
+		Color.html("#b784ff"),
+		Color.html("#47d18c"),
+		Color.html("#ff7b6e"),
+		Color.html("#48d7d0"),
+	]
+	return colors[block_id % colors.size()]
+
+func _block_has_reservation(block_id: int) -> bool:
+	if block_id < 0:
+		return false
+	for tile in tile_reservations.keys():
+		if int(block_for_tile.get(tile, -2)) == block_id:
+			return true
+	return false
+
+func _draw_block_occupant_badge(tile: Vector2i, train_id: String) -> void:
+	var c := _grid_to_screen(tile) + Vector2(-cell_size * 0.26, -cell_size * 0.29)
+	var badge_size := Vector2(max(32.0, cell_size * 0.5), max(16.0, cell_size * 0.24))
+	var rect := Rect2(c - badge_size * 0.5, badge_size)
+	draw_rect(rect.grow(2.0), Color.html("#172028"))
+	draw_rect(rect, Color.html("#ffbd4a"))
+	draw_rect(rect, Color.html("#172028"), false, 1.5)
+	draw_string(font, rect.position + Vector2(0, badge_size.y - 4.0), train_id, HORIZONTAL_ALIGNMENT_CENTER, badge_size.x, int(max(10.0, cell_size * 0.16)), Color.html("#172028"))
 
 func _draw_tracks() -> void:
 	for key in track_segments.keys():
@@ -2651,49 +3172,146 @@ func _draw_stations() -> void:
 			_draw_map_label(c + Vector2(-cell_size * 0.9, -cell_size * 1.04), "BUY HERE", cell_size * 1.8, int(max(13.0, cell_size * 0.22)), Color.html("#ffe06d"))
 		if int(st.get("platforms", 1)) > 1:
 			_draw_map_label(c + Vector2(-cell_size * 0.45, -cell_size * 0.7), "P%d" % int(st["platforms"]), cell_size * 0.9, label_size)
+		if editing_line_stops and selected_line_id != "" and lines.has(selected_line_id):
+			_draw_station_add_handle(st["pos"])
+
+func _draw_station_add_handle(station_pos: Vector2i) -> void:
+	var center: Vector2 = _station_add_handle_center(station_pos)
+	var radius: float = max(13.0, cell_size * 0.22)
+	draw_circle(center, radius + 3.0, Color.html("#172028"))
+	draw_circle(center, radius, Color.html("#ffd96b"))
+	draw_line(center + Vector2(-radius * 0.48, 0), center + Vector2(radius * 0.48, 0), Color.html("#172028"), 3.0, true)
+	draw_line(center + Vector2(0, -radius * 0.48), center + Vector2(0, radius * 0.48), Color.html("#172028"), 3.0, true)
+
+func _signal_gate_center(pos: Vector2i, dir: Vector2i) -> Vector2:
+	var c: Vector2 = _grid_to_screen(pos)
+	var n := pos + dir
+	if tracks.has(n) and _has_track_segment(pos, n):
+		return (c + _grid_to_screen(n)) * 0.5
+	var facing: Vector2 = Vector2(dir).normalized()
+	if facing.length_squared() == 0.0:
+		facing = Vector2.RIGHT
+	return c + facing * cell_size * 0.34
 
 func _draw_signals() -> void:
-	for p in signals.keys():
-		var c := _grid_to_screen(p)
+	var signal_issue := _selected_train_signal_issue()
+	var issue_pos: Vector2i = signal_issue.get("pos", Vector2i(-999, -999))
+	var issue_needed: Vector2i = signal_issue.get("needed", Vector2i.ZERO)
+	for raw_pos in signals.keys():
+		var p: Vector2i = raw_pos
 		for dir in _signal_dirs(p):
 			var sig_type: String = _signal_type_for_dir(p, dir)
-			var is_chain := sig_type == "chain"
 			var occupied := _signal_has_blocker_for_dir(p, dir)
-			var light := Color.html("#e84242") if occupied else Color.html("#42d46b")
-			var facing := Vector2(dir).normalized()
-			var side := Vector2(-facing.y, facing.x)
-			var rail_edge := c + side * cell_size * 0.25
-			var mast_pos := c + side * cell_size * 0.48 - facing * cell_size * 0.08
-			var head_pos := mast_pos - facing * cell_size * 0.12
-			var arrow_start := mast_pos - facing * cell_size * 0.18
-			var arrow_end := mast_pos + facing * cell_size * 0.28
-			var stem_col := Color.html("#172028")
-			var arrow_col := Color.html("#172028")
-			if occupied and _show_signal_debug_overlay():
-				draw_circle(mast_pos, cell_size * 0.42, Color(1.0, 0.18, 0.08, 0.24))
-			draw_line(rail_edge, mast_pos, stem_col, 3.0, true)
-			draw_line(arrow_start, arrow_end, arrow_col, 3.0, true)
-			var arrow_tip := arrow_end + facing * cell_size * 0.1
-			var arrow_left := arrow_end - facing * cell_size * 0.1 + side * cell_size * 0.08
-			var arrow_right := arrow_end - facing * cell_size * 0.1 - side * cell_size * 0.08
-			draw_polygon(
-				PackedVector2Array([arrow_tip, arrow_left, arrow_right]),
-				PackedColorArray([arrow_col, arrow_col, arrow_col])
-			)
-			if is_chain:
-				var chain_size := Vector2(cell_size * 0.34, cell_size * 0.28)
-				var chain_rect := Rect2(head_pos - chain_size * 0.5, chain_size)
-				draw_rect(chain_rect.grow(2.0), stem_col)
-				draw_rect(chain_rect, Color.html("#f7fbff"))
-				draw_rect(chain_rect, stem_col, false, 2.0)
-			else:
-				draw_circle(head_pos, cell_size * 0.18, Color.html("#f7fbff"))
-				draw_circle(head_pos, cell_size * 0.18, stem_col, false, 2.0)
-			draw_circle(head_pos, cell_size * 0.095, light)
-			if is_chain:
-				draw_circle(head_pos + facing * cell_size * 0.11, cell_size * 0.06, light.lightened(0.18))
+			var is_issue_signal := p == issue_pos
+			var light := Color.html("#ff8a2a") if is_issue_signal else Color.html("#e84242") if occupied else Color.html("#42d46b")
+			var facing: Vector2 = Vector2(dir).normalized()
+			if facing.length_squared() == 0.0:
+				continue
+			var side: Vector2 = Vector2(-facing.y, facing.x)
+			var gate_center: Vector2 = _signal_gate_center(p, dir)
+			var gate_len: float = max(24.0, cell_size * 0.62)
+			var gate_width: float = max(6.0, cell_size * 0.11)
+			var gate_col: Color = Color.html("#ff9d4a") if is_issue_signal else Color.html("#ffd96b") if selected_signal_pos == p else Color.html("#f7fbff")
+			if is_issue_signal:
+				draw_circle(gate_center, max(17.0, cell_size * 0.32), Color(1.0, 0.36, 0.08, 0.22))
+			draw_line(gate_center - side * gate_len * 0.5, gate_center + side * gate_len * 0.5, Color.html("#172028"), gate_width + 4.0, true)
+			draw_line(gate_center - side * gate_len * 0.46, gate_center + side * gate_len * 0.46, gate_col, gate_width, true)
+			_draw_signal_flow_marker(gate_center, facing, light)
+			_draw_signal_gate_badge(gate_center - side * cell_size * 0.21, sig_type == "chain", light)
 			if selected_signal_pos == p:
-				draw_line(c, c + facing * cell_size * 0.45, Color(0.05, 0.08, 0.1, 0.72), 2.0, true)
+				draw_circle(gate_center, max(14.0, cell_size * 0.24), Color(1.0, 0.86, 0.22, 0.22))
+	if issue_pos.x > -900 and issue_needed != Vector2i.ZERO:
+		_draw_needed_signal_direction(issue_pos, issue_needed)
+
+func _draw_signal_gate_badge(center: Vector2, is_chain: bool, light: Color) -> void:
+	var radius: float = max(8.0, cell_size * 0.14)
+	var outline: Color = Color.html("#172028")
+	if is_chain:
+		var points := PackedVector2Array([
+			center + Vector2(0, -radius * 1.12),
+			center + Vector2(radius * 1.12, 0),
+			center + Vector2(0, radius * 1.12),
+			center + Vector2(-radius * 1.12, 0),
+		])
+		draw_polygon(points, PackedColorArray([outline, outline, outline, outline]))
+		var inner := PackedVector2Array([
+			center + Vector2(0, -radius * 0.78),
+			center + Vector2(radius * 0.78, 0),
+			center + Vector2(0, radius * 0.78),
+			center + Vector2(-radius * 0.78, 0),
+		])
+		draw_polygon(inner, PackedColorArray([light, light, light, light]))
+	else:
+		draw_circle(center, radius * 1.12, outline)
+		draw_circle(center, radius * 0.78, light)
+
+func _draw_signal_flow_marker(gate_center: Vector2, dir: Vector2, light: Color) -> void:
+	var facing := dir.normalized()
+	if facing.length_squared() == 0.0:
+		return
+	var flow_col := light.lightened(0.18)
+	_draw_direction_chevron(gate_center + facing * cell_size * 0.22, facing, max(15.0, cell_size * 0.32), flow_col)
+
+func _draw_needed_signal_direction(pos: Vector2i, dir: Vector2i) -> void:
+	var facing := Vector2(dir).normalized()
+	if facing.length_squared() == 0.0:
+		return
+	var center := _signal_gate_center(pos, dir)
+	var side := Vector2(-facing.y, facing.x)
+	var width: float = max(7.0, cell_size * 0.12)
+	var length: float = max(26.0, cell_size * 0.66)
+	var marker_col := Color.html("#ff8a2a")
+	draw_line(center - side * length * 0.5, center + side * length * 0.5, Color.html("#172028"), width + 6.0, true)
+	draw_line(center - side * length * 0.46, center + side * length * 0.46, marker_col, width, true)
+	_draw_direction_chevron(center + facing * cell_size * 0.28, facing, max(17.0, cell_size * 0.36), marker_col)
+	var slash_a := center - side * length * 0.28 - facing * cell_size * 0.08
+	var slash_b := center + side * length * 0.28 + facing * cell_size * 0.08
+	draw_line(slash_a, slash_b, Color.html("#172028"), max(5.0, cell_size * 0.085), true)
+	draw_line(slash_a, slash_b, Color.html("#fff4cf"), max(2.5, cell_size * 0.045), true)
+
+func _draw_direction_chevron(center: Vector2, dir: Vector2, size: float, color: Color) -> void:
+	var facing := dir.normalized()
+	if facing.length_squared() == 0.0:
+		return
+	var side := Vector2(-facing.y, facing.x)
+	var outline := Color(0.05, 0.08, 0.1, min(1.0, color.a + 0.2))
+	var tip := center + facing * size
+	var left := center - facing * size * 0.72 + side * size * 0.58
+	var right := center - facing * size * 0.72 - side * size * 0.58
+	draw_polygon(PackedVector2Array([tip, left, right]), PackedColorArray([outline, outline, outline]))
+	var inner_tip := center + facing * size * 0.72
+	var inner_left := center - facing * size * 0.46 + side * size * 0.38
+	var inner_right := center - facing * size * 0.46 - side * size * 0.38
+	draw_polygon(PackedVector2Array([inner_tip, inner_left, inner_right]), PackedColorArray([color, color, color]))
+
+func _draw_train_route_hints() -> void:
+	for t in trains:
+		if not _is_train_on_map(t):
+			continue
+		var path: Array = t.get("path", [])
+		if path.is_empty():
+			continue
+		var train_id := String(t.get("id", ""))
+		var selected := selected_train_id == train_id
+		if not selected and not signal_help_open:
+			continue
+		var start_tile: Vector2i = t["tile"]
+		var start_index := int(t.get("path_index", 0))
+		var previous := start_tile
+		var max_hint: int = min(path.size(), start_index + (8 if selected else 5))
+		var route_col := Color(0.1, 0.38, 0.95, 0.72 if selected else 0.42)
+		for i in range(start_index, max_hint):
+			var next: Vector2i = path[i]
+			var a := _grid_to_screen(previous)
+			var b := _grid_to_screen(next)
+			var delta := b - a
+			if delta.length_squared() > 0.0:
+				var dir := delta.normalized()
+				var side := Vector2(-dir.y, dir.x)
+				var lane_offset := side * cell_size * 0.16
+				draw_line(a + lane_offset, b + lane_offset, Color(route_col.r, route_col.g, route_col.b, route_col.a * 0.38), 3.0, true)
+				_draw_direction_chevron((a + b) * 0.5 + lane_offset, dir, cell_size * (0.2 if selected else 0.16), route_col)
+			previous = next
 
 func _draw_trains() -> void:
 	for t in trains:

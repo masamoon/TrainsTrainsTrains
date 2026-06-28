@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_run_coal_smoke(main)
 	_run_layout_smoke(main)
 	_run_debug_money_smoke(main)
+	_run_diagonal_track_smoke(main)
 	_run_signal_rotation_smoke(main)
 	_run_paired_chain_signal_smoke(main)
 	_run_dispatcher_assignment_smoke(main)
@@ -64,6 +65,16 @@ func _run_debug_money_smoke(main: Node) -> void:
 	var before: int = int(main.local["money"])
 	main._debug_replenish_money()
 	_require(int(main.local["money"]) == before + 5000, "Debug money button should add $5000 to the local budget.")
+
+func _run_diagonal_track_smoke(main: Node) -> void:
+	main.start_scenario("coal_valley")
+	main.local["money"] = 5000
+	main._place_track_path(Vector2i(2, 2), Vector2i(5, 5))
+	_require(main._has_track_segment(Vector2i(2, 2), Vector2i(3, 3)), "Diagonal drags should create diagonal rail segments.")
+	_require(main._has_track_segment(Vector2i(3, 3), Vector2i(4, 4)), "Diagonal rail should continue through the drag path.")
+	_require(not main._has_track_segment(Vector2i(2, 2), Vector2i(3, 2)), "Diagonal drags should not create square corner rail.")
+	main._place_signal(Vector2i(3, 3), "block")
+	_require(main._signal_dir(Vector2i(3, 3)) == Vector2i(1, 1) or main._signal_dir(Vector2i(3, 3)) == Vector2i(-1, -1), "Signals on diagonal rail should face along the diagonal segment.")
 
 func _run_signal_rotation_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")
@@ -171,30 +182,31 @@ func _run_signal_siding_smoke(main: Node) -> void:
 
 func _run_advanced_yard_smoke(main: Node) -> void:
 	main.start_scenario("steelworks")
-	_place_path(main, [Vector2i(1, 3), Vector2i(7, 3), Vector2i(7, 4), Vector2i(12, 4)])
-	_place_path(main, [Vector2i(4, 7), Vector2i(4, 6), Vector2i(7, 6), Vector2i(7, 4)])
-	_place_path(main, [Vector2i(12, 4), Vector2i(12, 5), Vector2i(8, 5), Vector2i(7, 4)])
-	main._place_signal(Vector2i(6, 3), "chain")
-	main._place_signal(Vector2i(7, 5), "chain")
-	main._place_signal(Vector2i(7, 4), "chain")
-	main._rotate_signal_at(Vector2i(7, 4))
-	main._rotate_signal_at(Vector2i(7, 4))
-	main._place_signal(Vector2i(8, 4), "block")
-	main._place_signal(Vector2i(10, 4), "block")
-	main._place_signal(Vector2i(11, 4), "block")
-	main._rotate_signal_at(Vector2i(11, 4))
-	main._place_signal(Vector2i(8, 5), "block")
-	main._place_signal(Vector2i(11, 5), "block")
-	main._rotate_signal_at(Vector2i(11, 5))
-	main._place_signal(Vector2i(3, 3), "block")
-	main._place_signal(Vector2i(5, 3), "block")
-	main._place_signal(Vector2i(5, 6), "block")
-	main._place_signal(Vector2i(6, 6), "block")
-	main._buy_train()
-	main._buy_train()
-	main._buy_train()
-	main._buy_train()
-	for i in range(1200):
+	_place_path(main, [Vector2i(1, 3), Vector2i(2, 4), Vector2i(12, 4)])
+	_place_path(main, [Vector2i(12, 4), Vector2i(11, 5), Vector2i(8, 5), Vector2i(7, 4)])
+	_place_path(main, [Vector2i(7, 4), Vector2i(6, 3), Vector2i(1, 3)])
+	var east: Array[Vector2i] = [Vector2i.RIGHT]
+	var west: Array[Vector2i] = [Vector2i.LEFT]
+	var northwest: Array[Vector2i] = [Vector2i(-1, -1)]
+	main._replace_signal_set(Vector2i(2, 4), "block", east)
+	main._replace_signal_set(Vector2i(3, 4), "block", east)
+	main._replace_signal_set(Vector2i(5, 4), "block", east)
+	main._replace_signal_set(Vector2i(8, 4), "block", east)
+	main._replace_signal_set(Vector2i(10, 4), "block", east)
+	main._replace_signal_set(Vector2i(11, 4), "block", east)
+	main._replace_signal_set(Vector2i(11, 5), "block", west)
+	main._replace_signal_set(Vector2i(9, 5), "block", west)
+	main._replace_signal_set(Vector2i(8, 5), "chain", northwest)
+	main._replace_signal_set(Vector2i(6, 3), "block", west)
+	main._replace_signal_set(Vector2i(4, 3), "block", west)
+	main._replace_signal_set(Vector2i(2, 3), "block", west)
+	main._compute_blocks()
+	main._add_platform()
+	main._add_platform()
+	main._add_platform()
+	for i in range(4):
+		main._buy_train_for_source("west_line")
+	for i in range(3600):
 		if main.screen != main.Screen.LOCAL:
 			break
 		main._update_local(0.1)
@@ -202,9 +214,10 @@ func _run_advanced_yard_smoke(main: Node) -> void:
 	for t in main.trains:
 		if t["state"] == "NoRoute":
 			no_route_count += 1
-	_require(main.screen == main.Screen.LOCAL or main.screen == main.Screen.RESULTS, "Advanced Central Yard should remain playable after a short four-train run.")
+	_require(main.screen == main.Screen.RESULTS, "Advanced Central Yard should clear with the right-hand loop solution.")
 	_require(main.trains.size() == 4, "Advanced Central Yard should support buying four trains.")
 	_require(no_route_count == 0, "Advanced Central Yard trains should retain valid line routes during smoke.")
+	_require(int(main.result_data.get("productive_progress", 0)) >= 60 or int(main.local.get("productive_progress", 0)) >= 60, "Advanced Central Yard should hit the productive output target.")
 
 func _run_line_density_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")

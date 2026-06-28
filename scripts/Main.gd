@@ -5,7 +5,16 @@ enum Screen { REGIONAL, LOCAL, RESULTS }
 const SAVE_PATH := "user://trains_campaign.json"
 const CELL := 48.0
 const GRID_ORIGIN := Vector2(64, 132)
-const DIRS: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+const DIRS: Array[Vector2i] = [
+	Vector2i.UP,
+	Vector2i(1, -1),
+	Vector2i.RIGHT,
+	Vector2i(1, 1),
+	Vector2i.DOWN,
+	Vector2i(-1, 1),
+	Vector2i.LEFT,
+	Vector2i(-1, -1),
+]
 
 var screen: int = Screen.REGIONAL
 var scenarios: Array = []
@@ -299,25 +308,23 @@ func _define_scenarios() -> void:
 		{
 			"id": "steelworks",
 			"name": "Central Yard",
-			"purpose": "Teach signal blocks, junction debugging, holding sidings, and chain signals.",
-			"objective": "Process 60 freight trains while running a 4-train yard fleet.",
-			"briefing": "Lesson: this is the full yard problem. Signals are traffic lights for rail sections.\nBlock signals belong on plain track after stations or after junction exits; they let following trains enter once the next section is clear.\nChain signals belong before a junction; they make a train wait until its exit section is clear.\nPair signals protect both directions on a two-way rail tile. Use right-hand running on double track: lower/south eastbound, upper/north westbound.",
-			"start_message": "Build both return routes. Use block signals on straight sections and chain signals before the yard junction.",
+			"purpose": "Teach a compact right-hand yard loop with block spacing, a yard throat, and a return path.",
+			"objective": "Process 60 freight loads while running a 4-train yard fleet.",
+			"briefing": "Lesson: this is the first production yard loop.\nBuild West Line into Central Yard, continue to East Line, then use diagonal return rails through Central Yard and back to West Line.\nUse right-hand running: row 4 carries trains east, row 5 brings trains back into the yard throat, and row 3 carries the return west. Place block signals along straight sections and one chain signal before the diagonal return enters the yard throat.",
+			"start_message": "Build the full loop: West Line -> Central Yard -> East Line -> Central Yard -> West Line. Run four trains on the West Line line.",
 			"target": 60,
 			"fleet_goal": 4,
 			"cargo": "mixed freight",
 			"kind": "yard",
 			"start_budget": 3100,
 			"grid": Vector2i(14, 9),
-			"route": ["west_line", "central_yard", "east_line", "central_yard"],
-			"alt_route": ["south_line", "central_yard", "east_line", "central_yard"],
+			"route": ["west_line", "central_yard", "east_line", "central_yard", "west_line"],
 			"stations": [
 				{"id": "west_line", "name": "West Line", "pos": Vector2i(1, 3), "role": "source", "produces": "freight", "accepts": [], "platforms": 1},
-				{"id": "south_line", "name": "South Line", "pos": Vector2i(4, 7), "role": "source", "produces": "freight", "accepts": [], "platforms": 1},
 				{"id": "central_yard", "name": "Central Yard", "pos": Vector2i(7, 4), "role": "yard", "produces": "", "accepts": ["freight"], "platforms": 1},
 				{"id": "east_line", "name": "East Line", "pos": Vector2i(12, 4), "role": "sink", "produces": "", "accepts": ["freight"], "platforms": 1}
 			],
-			"ghost": [Vector2i(1, 3), Vector2i(2, 3), Vector2i(3, 3), Vector2i(4, 3), Vector2i(5, 3), Vector2i(6, 3), Vector2i(7, 3), Vector2i(7, 4), Vector2i(8, 4), Vector2i(9, 4), Vector2i(10, 4), Vector2i(11, 4), Vector2i(12, 4), Vector2i(4, 7), Vector2i(4, 6), Vector2i(5, 6), Vector2i(6, 6), Vector2i(7, 6), Vector2i(7, 5), Vector2i(7, 4)],
+			"ghost": [Vector2i(1, 3), Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 4), Vector2i(5, 4), Vector2i(6, 4), Vector2i(7, 4), Vector2i(8, 4), Vector2i(9, 4), Vector2i(10, 4), Vector2i(11, 4), Vector2i(12, 4), Vector2i(11, 5), Vector2i(10, 5), Vector2i(9, 5), Vector2i(8, 5), Vector2i(7, 4), Vector2i(6, 3), Vector2i(5, 3), Vector2i(4, 3), Vector2i(3, 3), Vector2i(2, 3), Vector2i(1, 3)],
 			"reward_money": 0,
 			"reward_materials": 0,
 			"reward_load": 0,
@@ -932,10 +939,18 @@ func _rotate_selected_signal() -> void:
 func _dir_name(dir: Vector2i) -> String:
 	if dir == Vector2i.UP:
 		return "north"
+	if dir == Vector2i(1, -1):
+		return "northeast"
 	if dir == Vector2i.DOWN:
 		return "south"
+	if dir == Vector2i(1, 1):
+		return "southeast"
 	if dir == Vector2i.LEFT:
 		return "west"
+	if dir == Vector2i(-1, 1):
+		return "southwest"
+	if dir == Vector2i(-1, -1):
+		return "northwest"
 	return "east"
 
 func _track_key(p: Vector2i) -> String:
@@ -963,8 +978,13 @@ func _segment_points(key: String) -> Array[Vector2i]:
 func _has_track_segment(a: Vector2i, b: Vector2i) -> bool:
 	return track_segments.has(_segment_key(a, b))
 
+func _is_adjacent_track_step(a: Vector2i, b: Vector2i) -> bool:
+	var dx: int = abs(a.x - b.x)
+	var dy: int = abs(a.y - b.y)
+	return max(dx, dy) == 1 and (dx != 0 or dy != 0)
+
 func _add_track_segment(a: Vector2i, b: Vector2i) -> bool:
-	if abs(a.x - b.x) + abs(a.y - b.y) != 1:
+	if not _is_adjacent_track_step(a, b):
 		return false
 	if not tracks.has(a) or not tracks.has(b):
 		return false
@@ -1017,13 +1037,18 @@ func _grid_drag_path(from_cell: Vector2i, to_cell: Vector2i) -> Array[Vector2i]:
 	if not _is_in_grid(cur):
 		cur = to_cell
 	path.append(cur)
-	var step_x := 1 if to_cell.x > cur.x else -1
-	while cur.x != to_cell.x:
-		cur.x += step_x
-		path.append(cur)
-	var step_y := 1 if to_cell.y > cur.y else -1
-	while cur.y != to_cell.y:
-		cur.y += step_y
+	while cur != to_cell:
+		var step_x := 0
+		if to_cell.x > cur.x:
+			step_x = 1
+		elif to_cell.x < cur.x:
+			step_x = -1
+		var step_y := 0
+		if to_cell.y > cur.y:
+			step_y = 1
+		elif to_cell.y < cur.y:
+			step_y = -1
+		cur += Vector2i(step_x, step_y)
 		path.append(cur)
 	return path
 
@@ -2548,11 +2573,11 @@ func _draw_ghost_route() -> void:
 	for i in range(ghost.size() - 1):
 		var a: Vector2i = ghost[i]
 		var b: Vector2i = ghost[i + 1]
-		if abs(a.x - b.x) + abs(a.y - b.y) == 1 and not _has_track_segment(a, b):
+		if _is_adjacent_track_step(a, b) and not _has_track_segment(a, b):
 			var ac := _grid_to_screen(a)
 			var bc := _grid_to_screen(b)
-			var horizontal: bool = abs(a.x - b.x) > 0
-			if not _draw_piece(game_track_texture, (ac + bc) * 0.5, Vector2(cell_size * 1.16, cell_size * 0.48), 0.0 if horizontal else PI * 0.5, Color(1, 1, 1, 0.24)):
+			var delta := bc - ac
+			if not _draw_piece(game_track_texture, (ac + bc) * 0.5, Vector2(delta.length() * 1.18, cell_size * 0.48), delta.angle(), Color(1, 1, 1, 0.24)):
 				draw_line(ac, bc, Color(0.4, 0.5, 0.45, 0.24), max(8.0, cell_size * 0.16), true)
 	for p in ghost:
 		if not tracks.has(p):
@@ -2591,8 +2616,8 @@ func _draw_tracks() -> void:
 			continue
 		var c := _grid_to_screen(p)
 		var nc := _grid_to_screen(n)
-		var horizontal: bool = abs(n.x - p.x) > 0
-		if not _draw_piece(game_track_texture, (c + nc) * 0.5, Vector2(cell_size * 1.2, cell_size * 0.54), 0.0 if horizontal else PI * 0.5):
+		var delta := nc - c
+		if not _draw_piece(game_track_texture, (c + nc) * 0.5, Vector2(delta.length() * 1.2, cell_size * 0.54), delta.angle()):
 			draw_line(c, nc, Color.html("#4b4037"), cell_size * 0.32, true)
 			draw_line(c, nc, Color.html("#e7d6a1"), cell_size * 0.18, true)
 			draw_line(c, nc, Color.html("#393536"), cell_size * 0.06, true)
@@ -2635,7 +2660,7 @@ func _draw_signals() -> void:
 			var is_chain := sig_type == "chain"
 			var occupied := _signal_has_blocker_for_dir(p, dir)
 			var light := Color.html("#e84242") if occupied else Color.html("#42d46b")
-			var facing := Vector2(dir)
+			var facing := Vector2(dir).normalized()
 			var side := Vector2(-facing.y, facing.x)
 			var rail_edge := c + side * cell_size * 0.25
 			var mast_pos := c + side * cell_size * 0.48 - facing * cell_size * 0.08

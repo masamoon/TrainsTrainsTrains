@@ -24,6 +24,8 @@ func _initialize() -> void:
 	_run_dwell_reason_display_smoke(main)
 	_run_block_occupant_smoke(main)
 	_run_train_next_leg_smoke(main)
+	_run_idle_train_blocker_reason_smoke(main)
+	_run_yard_route_return_smoke(main)
 	_run_target_progress_path_smoke(main)
 	_run_paired_chain_signal_smoke(main)
 	_run_dispatcher_assignment_smoke(main)
@@ -97,7 +99,11 @@ func _run_signal_rotation_smoke(main: Node) -> void:
 	_require(main.trains.size() == 1, "Rotation smoke should buy one train.")
 	main._update_local(0.1)
 	_require(main.trains[0]["state"] != "NoRoute", "A correctly facing signal should allow a route.")
+	var gate_before: Vector2 = main._signal_gate_center(Vector2i(5, 5), Vector2i.RIGHT)
 	main._rotate_signal_at(Vector2i(5, 5))
+	var gate_after: Vector2 = main._signal_gate_center(Vector2i(5, 5), Vector2i.LEFT)
+	_require(main.signals.has(Vector2i(5, 5)) and main._signal_dir(Vector2i(5, 5)) == Vector2i.LEFT, "Rotating a single straight signal should change facing without moving the signal to another cell.")
+	_require(gate_before.distance_to(gate_after) < 1.0, "Rotating a single straight signal should keep the visible signal centered in its cell.")
 	main._plan_next_path(main.trains[0])
 	_require(main.trains[0]["state"] == "NoRoute", "Rotating a one-way signal against travel should affect pathing, not only visuals.")
 	_require(String(main.trains[0]["wait_reason"]).contains("needs east"), "Wrong-way signal routes should explain the needed direction.")
@@ -150,6 +156,13 @@ func _run_signal_gate_hit_smoke(main: Node) -> void:
 	main._handle_local_click(gate_pos)
 	_require(main._signal_dirs(Vector2i(5, 5)).size() == 2, "Clicking the visible signal gate with the signal tool should toggle the owning signal.")
 	_require(not main.signals.has(Vector2i(6, 5)), "Clicking a signal gate on a tile boundary should not place an adjacent signal.")
+	var cell_center: Vector2 = main._grid_to_screen(Vector2i(5, 5))
+	var paired_east: Vector2 = main._signal_gate_center(Vector2i(5, 5), Vector2i.RIGHT)
+	var paired_west: Vector2 = main._signal_gate_center(Vector2i(5, 5), Vector2i.LEFT)
+	_require(paired_east.distance_to(cell_center) <= main.cell_size * 0.08, "Paired east-facing signal gate should sit near the owning cell center.")
+	_require(paired_west.distance_to(cell_center) <= main.cell_size * 0.08, "Paired west-facing signal gate should sit near the owning cell center.")
+	_require(paired_east.distance_to(paired_west) <= main.cell_size * 0.14, "Paired opposite signals should be adjacent, not split across neighboring segments.")
+	_require(paired_east.distance_to(paired_west) < 1.0, "Paired opposite signal arrows should share the same centered signal body.")
 	var nearby_track: Vector2 = main._grid_to_screen(Vector2i(6, 6))
 	_require(main._hit_signal_pos(nearby_track).x <= -900, "Nearby track clicks should not select an adjacent signal gate.")
 
@@ -215,6 +228,70 @@ func _run_train_next_leg_smoke(main: Node) -> void:
 	_require(main._next_stop_name_for_train(main.trains[0]) == "Interchange", "Selected train context should name the next stop.")
 	_require(main._next_leg_name_for_train(main.trains[0]).contains("east"), "Selected train context should name the next rail leg.")
 
+func _run_idle_train_blocker_reason_smoke(main: Node) -> void:
+	main.start_scenario("coal_valley")
+	_place_path(main, [Vector2i(1, 5), Vector2i(16, 5)])
+	var east: Array[Vector2i] = [Vector2i.RIGHT]
+	main._replace_signal_set(Vector2i(5, 5), "block", east)
+	main.trains.clear()
+	main.trains.append({
+		"id": "T01",
+		"name": "Train 01",
+		"line_id": "test",
+		"route": ["coal_mine", "interchange"],
+		"stop_index": 1,
+		"tile": Vector2i(5, 5),
+		"pos": main._grid_to_screen(Vector2i(5, 5)),
+		"path": [Vector2i(6, 5), Vector2i(7, 5), Vector2i(8, 5)],
+		"path_index": 0,
+		"state": "Idle",
+		"wait_reason": "",
+		"cargo": "coal",
+		"cargo_amount": 10,
+		"capacity": 40
+	})
+	main.trains.append({
+		"id": "T02",
+		"name": "Train 02",
+		"line_id": "test",
+		"route": ["coal_mine", "interchange"],
+		"stop_index": 1,
+		"tile": Vector2i(8, 5),
+		"pos": main._grid_to_screen(Vector2i(8, 5)),
+		"path": [],
+		"path_index": 0,
+		"state": "Idle",
+		"wait_reason": "",
+		"cargo": "",
+		"cargo_amount": 0,
+		"capacity": 40
+	})
+	var reason: String = main._display_reason_for_train(main.trains[0])
+	_require(reason.contains("Next signal section is occupied by T02"), "Idle train inspector should explain the next occupied signal section before the train state mutates.")
+
+func _run_yard_route_return_smoke(main: Node) -> void:
+	main.start_scenario("steelworks")
+	_place_path(main, [Vector2i(1, 4), Vector2i(2, 5), Vector2i(9, 5), Vector2i(16, 5)])
+	var line_id: String = main._create_or_get_line_for_source("west_line")
+	var scenario_route: Array = main.local["scenario"]["route"]
+	main.lines[line_id]["route"] = [scenario_route[0], scenario_route[1], scenario_route[2]]
+	main._buy_train_for_line(line_id)
+	_require(main.trains.size() == 1, "Yard route return smoke should buy one train.")
+	var t: Dictionary = main.trains[0]
+	t["tile"] = Vector2i(16, 5)
+	t["pos"] = main._grid_to_screen(Vector2i(16, 5))
+	t["path"] = []
+	t["path_index"] = 0
+	t["cargo"] = "freight"
+	t["cargo_amount"] = 10
+	t["stop_index"] = 2
+	t["state"] = "Idle"
+	main._handle_station_arrival(t)
+	_require(t.get("cargo", "") == "" and int(t.get("cargo_amount", 0)) == 0, "East Line should unload yard freight.")
+	_require(main._next_stop_name_for_train(t) == "West Line", "After East Line unload, yard route should return to West Line.")
+	var path: Array = t.get("path", [])
+	_require(not path.is_empty() and path[path.size() - 1] == Vector2i(1, 4), "After East Line unload, planned path should target West Line.")
+
 func _run_target_progress_path_smoke(main: Node) -> void:
 	main.start_scenario("central_yard")
 	_place_path(main, [Vector2i(1, 4), Vector2i(2, 5), Vector2i(16, 5)])
@@ -234,6 +311,7 @@ func _run_dispatcher_assignment_smoke(main: Node) -> void:
 	main._handle_local_click(main._station_add_handle_center(Vector2i(1, 5)))
 	main._handle_local_click(main._station_add_handle_center(Vector2i(16, 5)))
 	_require((main.lines[line_id]["route"] as Array).size() == 2, "Dispatcher smoke should allow adding line stops from station plus handles.")
+	_require(main._line_cargo_preview(line_id).contains("Coal Mine -> Interchange -> Coal Mine (repeat)"), "Line preview should show the implicit return to the first stop.")
 	main._complete_line_stop_edit()
 	_require(not main.editing_line_stops, "Complete Line should finish stop editing.")
 	main._buy_available_train()

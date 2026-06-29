@@ -1681,11 +1681,16 @@ func _select_train_from_dispatch(train_id: String) -> void:
 	_refresh_local_side_text()
 	queue_redraw()
 
-func _route_station_names(route: Array) -> String:
+func _route_station_names(route: Array, show_repeat: bool = false) -> String:
 	var names: Array[String] = []
 	for station_id in route:
 		if station_by_id.has(station_id):
 			names.append(String(station_by_id[station_id].get("name", station_id)))
+	if show_repeat and route.size() > 1:
+		var first_id: String = String(route[0])
+		if station_by_id.has(first_id) and String(route[route.size() - 1]) != first_id:
+			names.append(String(station_by_id[first_id].get("name", first_id)))
+		return "%s (repeat)" % " -> ".join(names)
 	return " -> ".join(names)
 
 func _line_cargo_preview(line_id: String) -> String:
@@ -1693,7 +1698,7 @@ func _line_cargo_preview(line_id: String) -> String:
 		return "Select a line to preview its orders and cargo."
 	var route: Array = lines[line_id]["route"]
 	var line: Dictionary = lines[line_id]
-	var text := "[b]%s[/b]\nOrders: %s\n" % [line["name"], _route_station_names(route) if not route.is_empty() else "No stops yet"]
+	var text := "[b]%s[/b]\nOrders: %s\n" % [line["name"], _route_station_names(route, true) if not route.is_empty() else "No stops yet"]
 	if editing_line_stops and line_id == selected_line_id:
 		text += "Editing: tap station plus signs on the map, then use Complete Line.\n"
 	if route.size() < 2:
@@ -1764,7 +1769,10 @@ func _refresh_dispatch_panel() -> void:
 			var state_label := String(t.get("state", ""))
 			if not _is_train_on_map(t) and String(t.get("line_id", "")) != "":
 				state_label = "Queued in depot"
-			var label := "%s  %s\n%s\n%s" % [train_id, cargo_text, line_label, state_label]
+			var next_label := ""
+			if String(t.get("line_id", "")) != "" and not (t.get("route", []) as Array).is_empty():
+				next_label = "\nNext: %s" % _next_stop_name_for_train(t)
+			var label := "%s  %s\n%s\n%s%s" % [train_id, cargo_text, line_label, state_label, next_label]
 			_add_dispatch_button(dispatch_train_box, label, train_id == selected_train_id, func(id := train_id): _select_train_from_dispatch(id))
 
 	dispatch_preview.text = _line_cargo_preview(selected_line_id)
@@ -2711,7 +2719,7 @@ func _refresh_local_side_text() -> void:
 	_refresh_dispatch_panel()
 
 func _suggestion_for_train(t: Dictionary) -> String:
-	var reason := String(t.get("wait_reason", ""))
+	var reason := _display_reason_for_train(t)
 	if (reason.contains("faces") or reason.contains("only opens")) and reason.contains("needs"):
 		return "Rotate that signal to the needed direction, or click it with the signal tool again if trains must run both ways."
 	if reason.contains("No valid route"):
@@ -2770,12 +2778,47 @@ func _display_reason_for_train(t: Dictionary) -> String:
 			return "Working through the yard stop."
 		if state in ["Loading", "Unloading", "Processing", "StationStop"]:
 			return "Station dwell in progress."
+		var next_issue := _next_move_issue_for_train(t)
+		if next_issue != "":
+			return next_issue
 		return "Moving normally."
 	if state == "YardStop":
 		return "Working through the yard stop. Next move: %s" % reason
 	if state in ["Loading", "Unloading", "Processing", "StationStop"]:
 		return "Station dwell in progress. Next move: %s" % reason
 	return reason
+
+func _next_move_issue_for_train(t: Dictionary) -> String:
+	if not _is_train_on_map(t):
+		return ""
+	var path: Array = t.get("path", [])
+	var path_index := int(t.get("path_index", 0))
+	if path.is_empty() or path_index < 0 or path_index >= path.size():
+		return ""
+	var next_tile: Vector2i = path[path_index]
+	var other := _tile_entry_blocker(next_tile, String(t.get("id", "")))
+	if other != "":
+		return "Next tile is occupied by %s." % other
+	var reserved_by := _tile_reserved_by_other(next_tile, String(t.get("id", "")))
+	if reserved_by != "":
+		return "Next tile is reserved by %s." % reserved_by
+	var cur: Vector2i = t.get("tile", _off_map_tile())
+	if _signal_controls_departure(cur) and not _signal_faces_movement(cur, next_tile):
+		return "Signal only opens %s, but this train needs %s." % [
+			_dir_screen_name(_signal_dir(cur)),
+			_dir_screen_name(next_tile - cur)
+		]
+	if _signal_controls_departure(cur) and _signal_faces_movement(cur, next_tile):
+		var sig_type: String = _signal_type_for_dir(cur, next_tile - cur)
+		if sig_type == "block":
+			var blocker := _block_signal_blocker(t)
+			if blocker != "":
+				return "Next signal section is occupied by %s." % blocker
+		else:
+			var chain_reason := _chain_signal_blocker(t)
+			if chain_reason != "":
+				return chain_reason
+	return ""
 
 func _signal_summary(pos: Vector2i) -> String:
 	var summaries: Array[String] = []
@@ -3184,14 +3227,7 @@ func _draw_station_add_handle(station_pos: Vector2i) -> void:
 	draw_line(center + Vector2(0, -radius * 0.48), center + Vector2(0, radius * 0.48), Color.html("#172028"), 3.0, true)
 
 func _signal_gate_center(pos: Vector2i, dir: Vector2i) -> Vector2:
-	var c: Vector2 = _grid_to_screen(pos)
-	var n := pos + dir
-	if tracks.has(n) and _has_track_segment(pos, n):
-		return (c + _grid_to_screen(n)) * 0.5
-	var facing: Vector2 = Vector2(dir).normalized()
-	if facing.length_squared() == 0.0:
-		facing = Vector2.RIGHT
-	return c + facing * cell_size * 0.34
+	return _grid_to_screen(pos)
 
 func _draw_signals() -> void:
 	var signal_issue := _selected_train_signal_issue()
@@ -3199,27 +3235,35 @@ func _draw_signals() -> void:
 	var issue_needed: Vector2i = signal_issue.get("needed", Vector2i.ZERO)
 	for raw_pos in signals.keys():
 		var p: Vector2i = raw_pos
-		for dir in _signal_dirs(p):
-			var sig_type: String = _signal_type_for_dir(p, dir)
-			var occupied := _signal_has_blocker_for_dir(p, dir)
-			var is_issue_signal := p == issue_pos
-			var light := Color.html("#ff8a2a") if is_issue_signal else Color.html("#e84242") if occupied else Color.html("#42d46b")
-			var facing: Vector2 = Vector2(dir).normalized()
-			if facing.length_squared() == 0.0:
-				continue
-			var side: Vector2 = Vector2(-facing.y, facing.x)
-			var gate_center: Vector2 = _signal_gate_center(p, dir)
-			var gate_len: float = max(24.0, cell_size * 0.62)
-			var gate_width: float = max(6.0, cell_size * 0.11)
-			var gate_col: Color = Color.html("#ff9d4a") if is_issue_signal else Color.html("#ffd96b") if selected_signal_pos == p else Color.html("#f7fbff")
-			if is_issue_signal:
-				draw_circle(gate_center, max(17.0, cell_size * 0.32), Color(1.0, 0.36, 0.08, 0.22))
-			draw_line(gate_center - side * gate_len * 0.5, gate_center + side * gate_len * 0.5, Color.html("#172028"), gate_width + 4.0, true)
-			draw_line(gate_center - side * gate_len * 0.46, gate_center + side * gate_len * 0.46, gate_col, gate_width, true)
-			_draw_signal_flow_marker(gate_center, facing, light)
-			_draw_signal_gate_badge(gate_center - side * cell_size * 0.21, sig_type == "chain", light)
-			if selected_signal_pos == p:
-				draw_circle(gate_center, max(14.0, cell_size * 0.24), Color(1.0, 0.86, 0.22, 0.22))
+		var dirs := _signal_dirs(p)
+		if dirs.is_empty():
+			continue
+		var primary_dir: Vector2i = _signal_dir(p)
+		var primary_facing: Vector2 = Vector2(primary_dir).normalized()
+		if primary_facing.length_squared() == 0.0:
+			primary_facing = Vector2.RIGHT
+		var side: Vector2 = Vector2(-primary_facing.y, primary_facing.x)
+		var gate_center: Vector2 = _signal_gate_center(p, primary_dir)
+		var is_issue_signal := p == issue_pos
+		var any_occupied := false
+		for dir in dirs:
+			if _signal_has_blocker_for_dir(p, dir):
+				any_occupied = true
+				break
+		var badge_light := Color.html("#ff8a2a") if is_issue_signal else Color.html("#e84242") if any_occupied else Color.html("#42d46b")
+		var gate_len: float = max(24.0, cell_size * 0.54)
+		var gate_width: float = max(6.0, cell_size * 0.1)
+		var gate_col: Color = Color.html("#ff9d4a") if is_issue_signal else Color.html("#ffd96b") if selected_signal_pos == p else Color.html("#f7fbff")
+		if is_issue_signal:
+			draw_circle(gate_center, max(17.0, cell_size * 0.32), Color(1.0, 0.36, 0.08, 0.22))
+		draw_line(gate_center - side * gate_len * 0.5, gate_center + side * gate_len * 0.5, Color.html("#172028"), gate_width + 4.0, true)
+		draw_line(gate_center - side * gate_len * 0.46, gate_center + side * gate_len * 0.46, gate_col, gate_width, true)
+		_draw_signal_gate_badge(gate_center - side * cell_size * 0.18, _signal_type(p) == "chain", badge_light)
+		for dir in dirs:
+			var light := Color.html("#ff8a2a") if is_issue_signal and dir == issue_needed else Color.html("#e84242") if _signal_has_blocker_for_dir(p, dir) else Color.html("#42d46b")
+			_draw_signal_flow_marker(gate_center, Vector2(dir), light, dirs.size() > 1)
+		if selected_signal_pos == p:
+			draw_circle(gate_center, max(14.0, cell_size * 0.24), Color(1.0, 0.86, 0.22, 0.22))
 	if issue_pos.x > -900 and issue_needed != Vector2i.ZERO:
 		_draw_needed_signal_direction(issue_pos, issue_needed)
 
@@ -3245,12 +3289,14 @@ func _draw_signal_gate_badge(center: Vector2, is_chain: bool, light: Color) -> v
 		draw_circle(center, radius * 1.12, outline)
 		draw_circle(center, radius * 0.78, light)
 
-func _draw_signal_flow_marker(gate_center: Vector2, dir: Vector2, light: Color) -> void:
+func _draw_signal_flow_marker(gate_center: Vector2, dir: Vector2, light: Color, compact: bool = false) -> void:
 	var facing := dir.normalized()
 	if facing.length_squared() == 0.0:
 		return
 	var flow_col := light.lightened(0.18)
-	_draw_direction_chevron(gate_center + facing * cell_size * 0.22, facing, max(15.0, cell_size * 0.32), flow_col)
+	var offset: float = cell_size * (0.11 if compact else 0.18)
+	var size: float = max(11.0, cell_size * (0.2 if compact else 0.28))
+	_draw_direction_chevron(gate_center + facing * offset, facing, size, flow_col)
 
 func _draw_needed_signal_direction(pos: Vector2i, dir: Vector2i) -> void:
 	var facing := Vector2(dir).normalized()

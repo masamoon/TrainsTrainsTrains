@@ -5,6 +5,10 @@ enum Screen { REGIONAL, LOCAL, RESULTS }
 const SAVE_PATH := "user://trains_campaign.json"
 const CELL := 48.0
 const GRID_ORIGIN := Vector2(64, 132)
+const RUN_LENGTH := 20
+const RUN_POOL_SIZE := 30
+const RUN_CHOICES := 3
+const RUN_SCENARIO_PREFIX := "run_"
 const DIRS: Array[Vector2i] = [
 	Vector2i.UP,
 	Vector2i(1, -1),
@@ -23,7 +27,22 @@ var campaign := {
 	"materials": 4,
 	"traffic_load": 18,
 	"traffic_capacity": 40,
-	"completed": []
+	"completed": [],
+	"run_seed": 32027,
+	"run_step": 0,
+	"run_completed": [],
+	"run_available": [],
+	"run_history": [],
+	"run_won": false,
+	"regional_traits": {
+		"coal_output": 0,
+		"freight_output": 0,
+		"steel_output": 0,
+		"reliability": 1.0,
+		"capacity_rating": 0,
+		"through_traffic": 0,
+		"burstiness": 0.0
+	}
 }
 
 var art_texture: Texture2D
@@ -53,6 +72,23 @@ var tool_buttons: Dictionary = {}
 var selected_tool := "track"
 var selected_train_id := ""
 var selected_signal_pos := Vector2i(-999, -999)
+var context_menu_open := false
+var context_target_type := ""
+var context_target_pos := Vector2i(-999, -999)
+var context_target_id := ""
+var context_screen_pos := Vector2.ZERO
+var context_menu_layer: Control
+var toast_label: Label
+var inspect_chip: RichTextLabel
+var service_edit_bar: HBoxContainer
+var service_edit_label: Label
+var service_edit_line_id := ""
+var press_active := false
+var press_start_pos := Vector2.ZERO
+var press_start_cell := Vector2i(-999, -999)
+var press_elapsed := 0.0
+var press_context_consumed := false
+var press_moved := false
 var dragging := false
 var last_drag_cell := Vector2i(-999, -999)
 var drag_start_cell := Vector2i(-999, -999)
@@ -81,7 +117,6 @@ var elapsed_since_progress := 0.0
 var last_progress_count := 0
 var deadlock_cooldown := 0.0
 var signal_help_open := false
-var planning_guide_open := false
 
 func _ready() -> void:
 	font = get_theme_default_font()
@@ -93,6 +128,7 @@ func _ready() -> void:
 	_load_ui_skin()
 	_define_scenarios()
 	_load_campaign()
+	_ensure_run_state()
 	rebuild_ui()
 	queue_redraw()
 
@@ -161,10 +197,16 @@ func _style_panel(panel: PanelContainer) -> void:
 func _local_side_panel_width() -> float:
 	var viewport_width: float = max(size.x, 640.0)
 	if viewport_width >= 1800.0:
-		return 520.0
+		return 560.0
 	if viewport_width >= 1500.0:
-		return 480.0
-	return 390.0
+		return 520.0
+	return min(520.0, viewport_width - 32.0)
+
+func _local_tray_height() -> float:
+	var viewport_height: float = max(size.y, 480.0)
+	if viewport_height <= 640.0:
+		return 176.0
+	return 214.0
 
 func _local_side_panel_inner_width() -> float:
 	return _local_side_panel_width() - 12.0 - 36.0
@@ -172,8 +214,17 @@ func _local_side_panel_inner_width() -> float:
 func _apply_local_side_panel_layout() -> void:
 	if screen != Screen.LOCAL or side_panel == null:
 		return
-	side_panel.offset_left = -_local_side_panel_width()
-	side_panel.offset_right = -12
+	side_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	side_panel.offset_left = 14
+	side_panel.offset_top = -_local_tray_height()
+	side_panel.offset_right = -14
+	side_panel.offset_bottom = -12
+	if tool_bar != null:
+		tool_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		tool_bar.offset_left = 18
+		tool_bar.offset_top = -(_local_tray_height() + 72.0)
+		tool_bar.offset_right = -18
+		tool_bar.offset_bottom = -(_local_tray_height() + 18.0)
 
 func _style_button(button: Button, selected: bool = false) -> void:
 	var base := Color.html("#20414c") if not selected else Color.html("#ffd96b")
@@ -218,6 +269,14 @@ func _add_backplate(texture: Texture2D, preset: int, offsets: Vector4, _margins:
 func _process(delta: float) -> void:
 	if screen != Screen.LOCAL:
 		return
+	if press_active:
+		press_elapsed += delta
+		if not press_moved and not press_context_consumed and press_elapsed >= 0.42:
+			var target := _context_target_at(press_start_pos)
+			_open_context_menu_at(press_start_pos, String(target.get("type", "tile")), String(target.get("id", "")), target.get("pos", press_start_cell))
+			press_context_consumed = true
+			press_active = false
+			dragging = false
 	if local.get("paused", true):
 		return
 	var step: float = delta * float(local.get("speed", 1.0))
@@ -232,32 +291,40 @@ func _gui_input(event: InputEvent) -> void:
 		elif screen == Screen.LOCAL:
 			if mb.button_index == MOUSE_BUTTON_LEFT:
 				if mb.pressed:
+					_close_context_menu()
+					press_active = true
+					press_elapsed = 0.0
+					press_context_consumed = false
+					press_moved = false
+					press_start_pos = mb.position
 					dragging = true
 					last_drag_cell = Vector2i(-999, -999)
 					drag_start_cell = _screen_to_grid(mb.position)
 					drag_hover_cell = drag_start_cell
-					_handle_local_click(mb.position)
 				else:
-					if dragging and selected_tool in ["track", "erase"]:
-						_finish_track_drag(mb.position)
+					if not press_context_consumed:
+						if dragging and selected_tool in ["track", "erase"] and mb.position.distance_to(press_start_pos) > 10.0:
+							_finish_track_drag(mb.position)
+						else:
+							_handle_local_click(mb.position)
+					press_active = false
+					press_elapsed = 0.0
+					press_context_consumed = false
+					press_moved = false
 					dragging = false
 					last_drag_cell = Vector2i(-999, -999)
 					drag_start_cell = Vector2i(-999, -999)
 					drag_hover_cell = Vector2i(-999, -999)
 					queue_redraw()
 			elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
-				if selected_tool in ["train", "line"]:
-					_select_tool("track")
-					local_message = "Tool canceled. Track tool selected."
-					_refresh_local_side_text()
-					return
-				var old_tool := selected_tool
-				selected_tool = "erase"
-				_handle_local_click(mb.position)
-				selected_tool = old_tool
+				var target := _context_target_at(mb.position)
+				_open_context_menu_at(mb.position, String(target.get("type", "tile")), String(target.get("id", "")), target.get("pos", _screen_to_grid(mb.position)))
 	if event is InputEventKey and screen == Screen.LOCAL:
 		var key := event as InputEventKey
-		if key.pressed and key.keycode == KEY_ESCAPE and selected_tool in ["train", "line"]:
+		if key.pressed and key.keycode == KEY_ESCAPE and context_menu_open:
+			_close_context_menu()
+			queue_redraw()
+		elif key.pressed and key.keycode == KEY_ESCAPE and selected_tool in ["train", "line"]:
 			_select_tool("track")
 			local_message = "Tool canceled. Track tool selected."
 			_refresh_local_side_text()
@@ -265,6 +332,8 @@ func _gui_input(event: InputEvent) -> void:
 		if selected_tool in ["track", "erase"]:
 			var motion := event as InputEventMouseMotion
 			drag_hover_cell = _screen_to_grid(motion.position)
+			if motion.position.distance_to(press_start_pos) > 10.0:
+				press_moved = true
 			queue_redraw()
 
 func _define_scenarios() -> void:
@@ -276,7 +345,6 @@ func _define_scenarios() -> void:
 			"objective": "Deliver 80 coal to Interchange. Keep average train wait below 40s.",
 			"briefing": "Contract: connect Coal Mine to Interchange and establish a coal service.\nSuccess is measured by delivered cargo and average train wait, not by matching a prescribed layout. A direct starter line is cheap, but leave room for later signals, passing space, or extra platforms if the service starts to queue.\nCreate a line from Coal Mine, assign at least one train, then watch the cargo badge and train status to decide what needs attention.",
 			"start_message": "Connect Coal Mine to Interchange, create a coal line, assign a train, then improve the service if waits appear.",
-			"guide_label": "One cheap starter option is a direct Coal Mine to Interchange connection.",
 			"target": 80,
 			"fleet_goal": 1,
 			"cargo": "coal",
@@ -302,7 +370,6 @@ func _define_scenarios() -> void:
 			"objective": "Move 20 freight loads with a 2-train line.",
 			"briefing": "Contract: run a two-train freight service between West Line and East Line.\nThe constraint is shared track, not a hidden answer. Opposing trains need either room to pass, one-way separation, or enough signal blocks that the dispatcher can keep them apart.\nUse block or paired signals where they explain and improve flow, then compare total output, queues, and average wait.",
 			"start_message": "Build a West Line to East Line service for two trains. Add capacity where the trains actually get in each other's way.",
-			"guide_label": "A passing siding is one reliable option for two-way traffic, but parallel one-way track can work too.",
 			"target": 20,
 			"fleet_goal": 2,
 			"cargo": "freight",
@@ -328,7 +395,6 @@ func _define_scenarios() -> void:
 			"objective": "Process 60 freight loads while running a 4-train yard fleet.",
 			"briefing": "Contract: keep a four-train yard fleet processing freight through Central Yard without letting the throat lock up.\nThis map is about managing a stressed production district. Build any readable circulation pattern that gives trains an entrance, a yard stop, an exit, and a way back to the source.\nUse chain signals before conflict points, block signals after clear exits, and extra platforms or holding track when queues tell you the yard is saturated.",
 			"start_message": "Design a yard circulation pattern for four trains. Watch the throat, queues, and wait time, then add infrastructure where the system strains.",
-			"guide_label": "A loop through the yard with a protected return path is one robust pattern, not the only acceptable answer.",
 			"target": 60,
 			"fleet_goal": 4,
 			"cargo": "mixed freight",
@@ -355,7 +421,6 @@ func _define_scenarios() -> void:
 			"objective": "Move 40 freight loads with at least four trains on a mostly single-track route.",
 			"briefing": "Contract: keep four freight trains moving over one shared corridor with only small passing pockets. This is not a double-track build: the main line is single track, and each pocket is just long enough to hold a meet or overtake.\nUse right-hand running through pockets: eastbound trains prefer the lower/south rail, westbound trains use the upper/north rail. Signal each pocket mouth so trains reserve one clear pocket segment at a time.",
 			"start_message": "Build West Line to East Line over a single-track corridor with short overtaking pockets. Run four trains without letting the pockets lock up.",
-			"guide_label": "A reliable pattern is one single main with three short upper passing pockets and chain-protected throats.",
 			"target": 40,
 			"fleet_goal": 4,
 			"cargo": "freight",
@@ -375,6 +440,444 @@ func _define_scenarios() -> void:
 			"wait_target": 120.0
 		}
 	]
+	scenarios.append_array(_generate_run_scenarios())
+
+func _generate_run_scenarios() -> Array:
+	var generated: Array = []
+	for i in range(RUN_POOL_SIZE):
+		generated.append(_make_run_scenario(i))
+	return generated
+
+func _make_run_scenario(index: int) -> Dictionary:
+	var difficulty: int = 1 + int(floor(float(index) / 10.0))
+	var pattern: int = index % 6
+	var grid := Vector2i(16 + difficulty * 2 + (index % 2) * 2, 10 + min(2, difficulty))
+	var west := Vector2i(1, int(grid.y / 2))
+	var east := Vector2i(grid.x - 2, int(grid.y / 2))
+	var mid := Vector2i(int(grid.x / 2), int(grid.y / 2))
+	var north := Vector2i(mid.x, 1 + (index % 2))
+	var south := Vector2i(mid.x, grid.y - 2 - (index % 2))
+	var branch := north if pattern in [0, 2, 5] else south
+	var return_branch := south if branch == north else north
+	var terrain: Array = _run_terrain_for(index, grid, pattern, difficulty)
+	var base_budget: int = 1550 + difficulty * 650 + pattern * 90
+	var target: int = 70 + difficulty * 35 + index * 3
+	var fleet_goal: int = int(clamp(1 + difficulty + int(pattern / 2), 1, 6))
+	var wait_target: float = 48.0 + difficulty * 16.0
+	var cargo_name := "coal"
+	var kind := "coal"
+	var route: Array = ["source", "branch_yard", "sink", "source"]
+	var stations: Array = [
+		{"id": "source", "name": _run_source_name(index, pattern), "pos": west, "role": "source", "produces": "coal", "accepts": [], "platforms": 1 + int(difficulty > 2)},
+		{"id": "branch_yard", "name": _run_branch_name(index, pattern), "pos": branch, "role": "yard", "produces": "", "accepts": ["coal"], "platforms": 1 + int(difficulty > 1)},
+		{"id": "sink", "name": _run_sink_name(index, pattern), "pos": east, "role": "sink", "produces": "", "accepts": ["coal"], "platforms": 1 + int(difficulty > 1)}
+	]
+	var name := _run_contract_name(index, pattern, difficulty)
+	var objective := "Deliver %d cargo through a branch contract, not a straight corridor." % target
+	var briefing := "Contract: expand the regional railway through %s.\nPhysical constraints on this map change your cheapest path. Previous districts add traffic pressure, so optimize for reliable flow rather than just connection.\nTerrain colors show mountains, rocks, rivers, and ocean tiles that force detours or bridges." % name
+
+	if pattern in [1, 4]:
+		kind = "yard"
+		cargo_name = "freight"
+		target = 24 + difficulty * 18 + index
+		fleet_goal = clamp(2 + difficulty, 2, 6)
+		stations = [
+			{"id": "source", "name": _run_source_name(index, pattern), "pos": west, "role": "source", "produces": "freight", "accepts": [], "platforms": 1 + int(difficulty > 1)},
+			{"id": "north_yard", "name": _run_yard_name(index), "pos": north, "role": "yard", "produces": "", "accepts": ["freight"], "platforms": 1 + int(difficulty > 2)},
+			{"id": "sink", "name": _run_sink_name(index, pattern), "pos": east, "role": "sink", "produces": "", "accepts": ["freight"], "platforms": 1 + int(difficulty > 1)},
+			{"id": "south_yard", "name": _run_branch_name(index, pattern), "pos": south, "role": "yard", "produces": "", "accepts": ["freight"], "platforms": 1 + int(difficulty > 1)}
+		]
+		route = ["source", "north_yard", "sink", "south_yard", "source"]
+		objective = "Process %d freight loads with at least %d trains." % [target, fleet_goal]
+	elif pattern == 5:
+		kind = "steel"
+		cargo_name = "steel"
+		target = 95 + difficulty * 40 + index * 2
+		fleet_goal = clamp(2 + difficulty, 3, 6)
+		stations = [
+			{"id": "coal_input", "name": "Coal Input", "pos": west, "role": "source", "produces": "coal", "accepts": [], "platforms": 1 + int(difficulty > 1)},
+			{"id": "steelworks", "name": _run_yard_name(index), "pos": branch, "role": "processor", "produces": "steel", "accepts": ["coal"], "platforms": 1 + int(difficulty > 2)},
+			{"id": "export_platform", "name": "Export Platform", "pos": east, "role": "sink", "produces": "", "accepts": ["steel"], "platforms": 1 + int(difficulty > 1)},
+			{"id": "staging", "name": _run_branch_name(index, pattern), "pos": return_branch, "role": "yard", "produces": "", "accepts": ["steel"], "platforms": 1 + int(difficulty > 1)}
+		]
+		route = ["coal_input", "steelworks", "export_platform", "staging", "coal_input"]
+		objective = "Convert coal into %d steel output with a %d-train service." % [target, fleet_goal]
+
+	var ghost := _run_solution_path_for(stations, grid, pattern, terrain, route)
+	return {
+		"id": "%s%02d" % [RUN_SCENARIO_PREFIX, index + 1],
+		"name": name,
+		"purpose": "Roguelike contract %d of %d: %s" % [index + 1, RUN_POOL_SIZE, _difficulty_label(difficulty)],
+		"objective": objective,
+		"briefing": briefing,
+		"start_message": "Build any reliable service that satisfies this contract. Terrain and inherited traffic pressure are the real constraints.",
+		"target": target,
+		"fleet_goal": fleet_goal,
+		"cargo": cargo_name,
+		"kind": kind,
+		"difficulty": difficulty,
+		"start_budget": base_budget,
+		"grid": grid,
+		"route": route,
+		"stations": stations,
+		"terrain": terrain,
+		"ghost": ghost,
+		"requirements": _requirements_for_contract(kind, difficulty, pattern, fleet_goal),
+		"reward_money": 220 + difficulty * 120 + pattern * 20,
+		"reward_load": 5 + difficulty * 3 + pattern,
+		"reward_capacity": 2 + difficulty * 2 + int(pattern == 4) * 6,
+		"wait_target": wait_target
+	}
+
+func _difficulty_label(difficulty: int) -> String:
+	if difficulty <= 1:
+		return "local feeder"
+	if difficulty == 2:
+		return "regional pressure"
+	return "late-run stress"
+
+func _run_contract_name(index: int, pattern: int, difficulty: int) -> String:
+	var names := [
+		"Coal Cut",
+		"River Exchange",
+		"Granite Pass",
+		"Harbor Approach",
+		"Yard Throat",
+		"Steel Relay"
+	]
+	return "%s %02d" % [names[pattern], index + 1]
+
+func _run_source_name(index: int, pattern: int) -> String:
+	var names := ["North Mine", "Timber Spur", "Quarry", "Harbor Mine", "Freight Intake", "Coal Field"]
+	return "%s %d" % [names[pattern], index + 1]
+
+func _run_sink_name(index: int, pattern: int) -> String:
+	var names := ["Interchange", "Market Town", "Cement Works", "Port Yard", "Sorting Exit", "Export Rail"]
+	return "%s %d" % [names[pattern], index + 1]
+
+func _run_yard_name(index: int) -> String:
+	var names := ["Central Yard", "Ridge Yard", "Bay Junction", "Foundry Yard", "Summit Works"]
+	return "%s %d" % [names[index % names.size()], index + 1]
+
+func _run_branch_name(index: int, pattern: int) -> String:
+	var names := ["Relief Spur", "North Fork", "Market Branch", "Harbor Staging", "Return Yard", "Hill Exchange"]
+	return "%s %d" % [names[pattern], index + 1]
+
+func _requirements_for_contract(kind: String, difficulty: int, pattern: int, fleet_goal: int) -> Array[String]:
+	var req: Array[String] = []
+	req.append("Minimum fleet: %d trains" % fleet_goal)
+	req.append("Route includes an off-axis branch stop; a simple A-to-B double track is not enough.")
+	req.append("Terrain forces at least one detour or bridge decision.")
+	if kind == "yard":
+		req.append("Yard stations add dwell time and reward platform capacity.")
+	elif kind == "steel":
+		req.append("Coal must reach the processor before steel can be exported.")
+	else:
+		req.append("Source and sink throughput reward short waits over cheap track.")
+	return req
+
+func _run_terrain_for(index: int, grid: Vector2i, pattern: int, difficulty: int) -> Array:
+	var terrain: Array = []
+	var river_x: int = 4 + (index * 3) % int(max(5, grid.x - 7))
+	if pattern in [1, 5]:
+		for y in range(1, grid.y - 1):
+			if y != int(grid.y / 2) and y != int(grid.y / 2) + 1:
+				terrain.append({"pos": Vector2i(river_x, y), "type": "river"})
+	if pattern in [2, 4]:
+		var ridge_y: int = 2 + (index % int(max(2, grid.y - 5)))
+		for x in range(3, grid.x - 3):
+			if x % 4 != index % 4:
+				terrain.append({"pos": Vector2i(x, ridge_y), "type": "mountain"})
+		for x in range(5, grid.x - 5, 4):
+			terrain.append({"pos": Vector2i(x, ridge_y + 1), "type": "rock"})
+	if pattern == 3:
+		for y in range(0, grid.y):
+			terrain.append({"pos": Vector2i(grid.x - 1, y), "type": "ocean"})
+			if y > 1 and y < grid.y - 2 and y % 3 != 0:
+				terrain.append({"pos": Vector2i(grid.x - 2, y), "type": "ocean"})
+	if pattern == 0:
+		for x in range(4, grid.x - 4, 3):
+			terrain.append({"pos": Vector2i(x, 2 + ((x + index) % max(2, grid.y - 4))), "type": "rock"})
+	if difficulty >= 3:
+		for x in range(2, grid.x - 2, 5):
+			terrain.append({"pos": Vector2i(x, grid.y - 2), "type": "river"})
+	return terrain
+
+func _run_solution_path_for(stations: Array, grid: Vector2i, pattern: int, terrain: Array, route: Array = []) -> Array[Vector2i]:
+	var path: Array[Vector2i] = []
+	if stations.is_empty():
+		return path
+	var ordered_stations: Array = stations.duplicate()
+	if not route.is_empty():
+		var by_id := {}
+		for st in stations:
+			by_id[String(st["id"])] = st
+		ordered_stations = []
+		for station_id in route:
+			if by_id.has(String(station_id)):
+				ordered_stations.append(by_id[String(station_id)])
+	if ordered_stations.is_empty():
+		return path
+	var last: Vector2i = ordered_stations[0]["pos"]
+	path.append(last)
+	for i in range(1, ordered_stations.size()):
+		var target: Vector2i = ordered_stations[i]["pos"]
+		var leg := _terrain_aware_path(last, target, grid, terrain, _station_positions(stations), pattern)
+		if leg.is_empty():
+			leg = _simple_path_points(last, target)
+		for p in leg:
+			if path.is_empty() or path[path.size() - 1] != p:
+				path.append(p)
+		last = target
+	return path
+
+func _station_positions(stations: Array) -> Array[Vector2i]:
+	var positions: Array[Vector2i] = []
+	for st in stations:
+		positions.append(st["pos"])
+	return positions
+
+func _terrain_aware_path(start: Vector2i, goal: Vector2i, grid: Vector2i, terrain: Array, allowed_blocked: Array[Vector2i], pattern: int) -> Array[Vector2i]:
+	var frontier: Array[Vector2i] = [start]
+	var came_from: Dictionary = {start: start}
+	while not frontier.is_empty():
+		var current: Vector2i = frontier.pop_front()
+		if current == goal:
+			break
+		for n in _generation_neighbors_toward(current, goal, pattern):
+			if n.x < 0 or n.y < 0 or n.x >= grid.x or n.y >= grid.y:
+				continue
+			if _generation_terrain_blocks(n, terrain, allowed_blocked):
+				continue
+			if not came_from.has(n):
+				came_from[n] = current
+				frontier.append(n)
+	if not came_from.has(goal):
+		return []
+	var path: Array[Vector2i] = []
+	var p := goal
+	while p != start:
+		path.push_front(p)
+		p = came_from[p]
+	path.push_front(start)
+	return path
+
+func _generation_neighbors_toward(current: Vector2i, goal: Vector2i, pattern: int) -> Array[Vector2i]:
+	var options: Array[Vector2i] = []
+	for d in DIRS:
+		options.append(current + d)
+	var sorted: Array[Vector2i] = []
+	for n in options:
+		var score := Vector2(goal - n).length_squared()
+		score += abs(n.y - (goal.y + ((pattern % 3) - 1))) * 0.08
+		var inserted := false
+		for i in range(sorted.size()):
+			var other_score := Vector2(goal - sorted[i]).length_squared()
+			other_score += abs(sorted[i].y - (goal.y + ((pattern % 3) - 1))) * 0.08
+			if score < other_score:
+				sorted.insert(i, n)
+				inserted = true
+				break
+		if not inserted:
+			sorted.append(n)
+	return sorted
+
+func _generation_terrain_blocks(p: Vector2i, terrain: Array, allowed_blocked: Array[Vector2i]) -> bool:
+	if allowed_blocked.has(p):
+		return false
+	for item in terrain:
+		if item.get("pos", Vector2i(-999, -999)) == p:
+			return String(item.get("type", "")) in ["mountain", "rock", "ocean"]
+	return false
+
+func _simple_path_points(from_cell: Vector2i, to_cell: Vector2i) -> Array[Vector2i]:
+	var path: Array[Vector2i] = []
+	var cur := from_cell
+	path.append(cur)
+	while cur != to_cell:
+		var step_x := signi(to_cell.x - cur.x)
+		var step_y := signi(to_cell.y - cur.y)
+		if abs(to_cell.x - cur.x) >= abs(to_cell.y - cur.y):
+			cur.x += step_x
+		else:
+			cur.y += step_y
+		path.append(cur)
+	return path
+
+func signi(value: int) -> int:
+	if value > 0:
+		return 1
+	if value < 0:
+		return -1
+	return 0
+
+func _ensure_run_state() -> void:
+	for key in ["completed", "run_completed", "run_available", "run_history"]:
+		if not campaign.has(key) or typeof(campaign[key]) != TYPE_ARRAY:
+			campaign[key] = []
+	if not campaign.has("run_seed"):
+		campaign["run_seed"] = 32027
+	if not campaign.has("run_step"):
+		campaign["run_step"] = (campaign["run_completed"] as Array).size()
+	if not campaign.has("run_won"):
+		campaign["run_won"] = false
+	if not campaign.has("regional_traits") or typeof(campaign["regional_traits"]) != TYPE_DICTIONARY:
+		campaign["regional_traits"] = {}
+	var traits: Dictionary = campaign["regional_traits"]
+	for key in ["coal_output", "freight_output", "steel_output", "capacity_rating", "through_traffic"]:
+		if not traits.has(key):
+			traits[key] = 0
+	if not traits.has("reliability"):
+		traits["reliability"] = 1.0
+	if not traits.has("burstiness"):
+		traits["burstiness"] = 0.0
+	campaign["run_step"] = min(RUN_LENGTH, (campaign["run_completed"] as Array).size())
+	campaign["run_won"] = int(campaign["run_step"]) >= RUN_LENGTH
+	_ensure_run_choices()
+
+func _default_regional_traits() -> Dictionary:
+	return {
+		"coal_output": 0,
+		"freight_output": 0,
+		"steel_output": 0,
+		"reliability": 1.0,
+		"capacity_rating": 0,
+		"through_traffic": 0,
+		"burstiness": 0.0
+	}
+
+func _reset_progress(save_to_disk: bool = true) -> void:
+	campaign["money"] = 1500
+	campaign["materials"] = 4
+	campaign["traffic_load"] = 18
+	campaign["traffic_capacity"] = 40
+	campaign["completed"] = []
+	campaign["run_seed"] = 32027
+	campaign["run_step"] = 0
+	campaign["run_completed"] = []
+	campaign["run_available"] = []
+	campaign["run_history"] = []
+	campaign["run_won"] = false
+	campaign["regional_traits"] = _default_regional_traits()
+	_ensure_run_state()
+	if save_to_disk:
+		_save_campaign()
+	screen = Screen.REGIONAL
+	rebuild_ui()
+	queue_redraw()
+
+func _ensure_run_choices() -> void:
+	if bool(campaign.get("run_won", false)):
+		campaign["run_available"] = []
+		return
+	var valid_choices: Array = []
+	for id in campaign.get("run_available", []):
+		if _is_run_scenario_id(String(id)) and not _run_completed_has(String(id)):
+			valid_choices.append(String(id))
+	if valid_choices.size() >= min(RUN_CHOICES, _remaining_run_scenario_count()):
+		campaign["run_available"] = valid_choices.slice(0, RUN_CHOICES)
+		return
+	var choices := valid_choices
+	var completed: Array = campaign.get("run_completed", [])
+	var step := int(campaign.get("run_step", completed.size()))
+	var seed := int(campaign.get("run_seed", 32027))
+	var offset := 0
+	while choices.size() < RUN_CHOICES and offset < RUN_POOL_SIZE * 2:
+		var index := (seed + step * 7 + offset * 11) % RUN_POOL_SIZE
+		var id := "%s%02d" % [RUN_SCENARIO_PREFIX, index + 1]
+		if not completed.has(id) and not choices.has(id):
+			choices.append(id)
+		offset += 1
+	campaign["run_available"] = choices
+
+func _remaining_run_scenario_count() -> int:
+	return max(0, RUN_POOL_SIZE - (campaign.get("run_completed", []) as Array).size())
+
+func _run_completed_has(id: String) -> bool:
+	return (campaign.get("run_completed", []) as Array).has(id)
+
+func _is_run_scenario_id(id: String) -> bool:
+	return id.begins_with(RUN_SCENARIO_PREFIX)
+
+func _regional_visible_scenarios() -> Array:
+	var visible: Array = []
+	for s in scenarios:
+		var id := String(s.get("id", ""))
+		if _is_run_scenario_id(id):
+			if _run_completed_has(id) or (campaign.get("run_available", []) as Array).has(id):
+				visible.append(s)
+		elif id in ["coal_valley", "central_yard", "steelworks", "overtake_pass"]:
+			visible.append(s)
+	return visible
+
+func _apply_run_pressure_to_scenario(scenario: Dictionary) -> Dictionary:
+	var sc := scenario.duplicate(true)
+	if not _is_run_scenario_id(String(sc.get("id", ""))):
+		return sc
+	var traits: Dictionary = campaign.get("regional_traits", {})
+	var through := int(traits.get("through_traffic", 0))
+	var capacity := int(traits.get("capacity_rating", 0))
+	var reliability := float(traits.get("reliability", 1.0))
+	var pressure: int = int(max(0, through - capacity))
+	sc["target"] = int(sc.get("target", 60)) + pressure * 2 + int((1.0 - reliability) * 20.0)
+	sc["fleet_goal"] = min(8, int(sc.get("fleet_goal", 1)) + int(pressure >= 8))
+	sc["start_budget"] = int(sc.get("start_budget", 1500)) + int(campaign.get("money", 0)) / 12 + capacity * 10
+	sc["wait_target"] = max(28.0, float(sc.get("wait_target", 45.0)) - min(14.0, float(pressure)))
+	var briefing := String(sc.get("briefing", ""))
+	briefing += "\nInherited region: Through traffic %d, capacity rating %d, reliability %.0f%%. These values come from previous completed nodes." % [
+		through,
+		capacity,
+		reliability * 100.0
+	]
+	sc["briefing"] = briefing
+	return sc
+
+func _record_run_completion(sc: Dictionary, avg_wait: float, productive: bool) -> void:
+	var id := String(sc.get("id", ""))
+	if not _is_run_scenario_id(id) or _run_completed_has(id):
+		return
+	var run_completed: Array = campaign.get("run_completed", [])
+	run_completed.append(id)
+	campaign["run_completed"] = run_completed
+	campaign["run_step"] = min(RUN_LENGTH, run_completed.size())
+	var reliability_score := 1.0
+	if float(local.get("wait_target", 1.0)) > 0.0:
+		reliability_score = clamp(1.0 - (avg_wait / max(1.0, float(local.get("wait_target", 1.0)))) * 0.35, 0.35, 1.0)
+	if int(local.get("deadlocks", 0)) > 0:
+		reliability_score *= 0.75
+	if productive:
+		reliability_score = min(1.0, reliability_score + 0.08)
+	var traits: Dictionary = campaign.get("regional_traits", {})
+	traits["through_traffic"] = int(traits.get("through_traffic", 0)) + int(sc.get("reward_load", 0))
+	traits["capacity_rating"] = int(traits.get("capacity_rating", 0)) + int(sc.get("reward_capacity", 0))
+	traits["reliability"] = clamp((float(traits.get("reliability", 1.0)) * 0.75) + reliability_score * 0.25, 0.2, 1.15)
+	traits["burstiness"] = clamp(float(traits.get("burstiness", 0.0)) + (1.0 - reliability_score) * 0.3, 0.0, 2.0)
+	var kind := String(sc.get("kind", "coal"))
+	if kind == "coal":
+		traits["coal_output"] = int(traits.get("coal_output", 0)) + _completion_progress()
+	elif kind == "yard":
+		traits["freight_output"] = int(traits.get("freight_output", 0)) + _completion_progress()
+	elif kind == "steel":
+		traits["steel_output"] = int(traits.get("steel_output", 0)) + _completion_progress()
+	campaign["regional_traits"] = traits
+	var history: Array = campaign.get("run_history", [])
+	history.append({
+		"id": id,
+		"name": sc.get("name", id),
+		"step": campaign["run_step"],
+		"output": _completion_progress(),
+		"avg_wait": avg_wait,
+		"deadlocks": int(local.get("deadlocks", 0)),
+		"reliability": reliability_score,
+		"productive": productive
+	})
+	campaign["run_history"] = history
+	if int(campaign["run_step"]) >= RUN_LENGTH:
+		campaign["run_won"] = true
+		campaign["run_available"] = []
+	else:
+		campaign["run_available"] = []
+		_ensure_run_choices()
 
 func rebuild_ui() -> void:
 	for child in get_children():
@@ -387,6 +890,8 @@ func rebuild_ui() -> void:
 	top_status.offset_top = 13
 	top_status.offset_right = -64
 	top_status.offset_bottom = 42
+	top_status.clip_text = true
+	top_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	top_status.add_theme_font_size_override("font_size", 18)
 	top_status.add_theme_color_override("font_color", Color.html("#172028"))
 	top_status.add_theme_color_override("font_shadow_color", Color(1, 0.93, 0.72, 0.72))
@@ -409,7 +914,7 @@ func rebuild_ui() -> void:
 func _build_regional_ui() -> void:
 	_add_backplate(ui_panel_texture, Control.PRESET_TOP_LEFT, Vector4(32, 54, 760, 162), Vector4(160, 120, 160, 120), Color(1, 1, 1, 0.96))
 	var title := Label.new()
-	title.text = "TrainsTrainsTrains"
+	title.text = "TrainsTrainsTrains: Regional Run"
 	title.add_theme_font_size_override("font_size", 36)
 	title.add_theme_color_override("font_color", Color.html("#172028"))
 	title.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -420,7 +925,7 @@ func _build_regional_ui() -> void:
 	add_child(title)
 
 	var hint := Label.new()
-	hint.text = "Pick an available local contract. Completed nodes feed the regional network."
+	hint.text = "Pick one available contract. Complete 20 maps; every node changes the pressure on the next."
 	hint.add_theme_font_size_override("font_size", 17)
 	hint.add_theme_color_override("font_color", Color.html("#28363f"))
 	hint.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -429,6 +934,13 @@ func _build_regional_ui() -> void:
 	hint.offset_right = 740
 	hint.offset_bottom = 146
 	add_child(hint)
+
+	var reset_button := _add_button(self, "Reset\nProgress", func(): _reset_progress())
+	reset_button.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	reset_button.offset_left = 612
+	reset_button.offset_top = 72
+	reset_button.offset_right = 748
+	reset_button.offset_bottom = 138
 
 	side_panel = PanelContainer.new()
 	_style_panel(side_panel)
@@ -452,138 +964,35 @@ func _build_regional_ui() -> void:
 	_refresh_regional_side_text()
 
 func _build_local_ui() -> void:
-	_add_backplate(ui_hud_texture, Control.PRESET_TOP_WIDE, Vector4(4, 42, -4, 188), Vector4(220, 110, 220, 100), Color(1, 1, 1, 0.92))
+	tool_bar = null
+	side_panel = null
+	side_text = null
+	dispatch_line_box = null
+	dispatch_train_box = null
+	dispatch_preview = null
 	hud_bar = HBoxContainer.new()
-	hud_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	hud_bar.offset_left = 18
-	hud_bar.offset_top = 50
-	hud_bar.offset_right = -18
-	hud_bar.offset_bottom = 100
-	hud_bar.add_theme_constant_override("separation", 10)
+	hud_bar.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	hud_bar.offset_left = -360
+	hud_bar.offset_top = 8
+	hud_bar.offset_right = -8
+	hud_bar.offset_bottom = 48
+	hud_bar.add_theme_constant_override("separation", 6)
 	hud_bar.z_index = 30
 	hud_bar.z_as_relative = false
 	add_child(hud_bar)
+	if top_status != null:
+		top_status.offset_left = 14
+		top_status.offset_top = 12
+		top_status.offset_right = -380
+		top_status.offset_bottom = 42
+		top_status.add_theme_font_size_override("font_size", 16)
 
 	_add_button(hud_bar, "Pause", func(): _toggle_pause())
 	_add_button(hud_bar, "1x/2x", func(): _toggle_speed())
+	_add_button(hud_bar, "Reset", func(): _restart_trains_only())
 	_add_button(hud_bar, "Region", func(): _return_to_region())
 
-	tool_bar = HBoxContainer.new()
-	tool_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	tool_bar.offset_left = 20
-	tool_bar.offset_top = 108
-	tool_bar.offset_right = -20
-	tool_bar.offset_bottom = 166
-	tool_bar.add_theme_constant_override("separation", 6)
-	tool_bar.z_index = 30
-	tool_bar.z_as_relative = false
-	add_child(tool_bar)
-
-	_add_tool_button("Track\n$25", "track")
-	_add_tool_button("Erase", "erase")
-	_add_tool_button("Block\n$80", "block")
-	_add_tool_button("Chain\n$120", "chain")
-	_add_tool_button("Line\nPick", "line")
-	_add_button(tool_bar, "New\nTrain", func(): _buy_available_train())
-	_add_button(tool_bar, "Assign\nTrain", func(): _assign_selected_train_to_selected_line())
-	_add_button(tool_bar, "Signal\nHelp", func(): _toggle_signal_help())
-	_add_button(tool_bar, "Plan\nGuide", func(): _toggle_planning_guide())
-	_add_button(tool_bar, "Platform\n$200", func(): _add_platform())
-	_add_button(tool_bar, "Rotate\nSig", func(): _rotate_selected_signal())
-	_add_button(tool_bar, "Restart\nTrains", func(): _restart_trains_only())
-	_add_tool_button("Buy\nTrain", "train")
-	_add_button(tool_bar, "Reset\nMap", func(): start_scenario(local.get("id", "coal_valley")))
-
-	side_panel = PanelContainer.new()
-	_style_panel(side_panel)
-	side_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	side_panel.offset_left = -_local_side_panel_width()
-	side_panel.offset_top = 100
-	side_panel.offset_right = -12
-	side_panel.offset_bottom = -16
-	side_panel.z_index = 30
-	side_panel.z_as_relative = false
-	add_child(side_panel)
-	var side_box := VBoxContainer.new()
-	side_box.add_theme_constant_override("separation", 8)
-	side_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_panel.add_child(side_box)
-
-	side_text = RichTextLabel.new()
-	side_text.bbcode_enabled = true
-	side_text.scroll_active = true
-	side_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	side_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_text.custom_minimum_size = Vector2(0, 240)
-	side_text.add_theme_color_override("default_color", Color.html("#172028"))
-	side_text.add_theme_font_size_override("normal_font_size", 16)
-	side_text.add_theme_color_override("font_outline_color", Color(1, 0.98, 0.86, 0.8))
-	side_text.add_theme_constant_override("outline_size", 2)
-	side_box.add_child(side_text)
-
-	var dispatch_title := Label.new()
-	dispatch_title.text = "Dispatcher"
-	dispatch_title.add_theme_font_size_override("font_size", 18)
-	dispatch_title.add_theme_color_override("font_color", Color.html("#172028"))
-	side_box.add_child(dispatch_title)
-
-	var dispatch_lists := HBoxContainer.new()
-	dispatch_lists.add_theme_constant_override("separation", 8)
-	dispatch_lists.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_box.add_child(dispatch_lists)
-
-	dispatch_line_box = VBoxContainer.new()
-	dispatch_line_box.custom_minimum_size = Vector2(150, 0)
-	dispatch_line_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	dispatch_line_box.size_flags_stretch_ratio = 0.44
-	dispatch_line_box.add_theme_constant_override("separation", 5)
-	dispatch_lists.add_child(dispatch_line_box)
-
-	dispatch_train_box = VBoxContainer.new()
-	dispatch_train_box.custom_minimum_size = Vector2(180, 0)
-	dispatch_train_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	dispatch_train_box.size_flags_stretch_ratio = 0.56
-	dispatch_train_box.add_theme_constant_override("separation", 5)
-	dispatch_lists.add_child(dispatch_train_box)
-
-	var dispatch_actions := HBoxContainer.new()
-	dispatch_actions.add_theme_constant_override("separation", 8)
-	dispatch_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_box.add_child(dispatch_actions)
-	var buy_stock_button := _add_button(dispatch_actions, "Buy Train $300", func(): _buy_available_train())
-	_fit_sidebar_action_button(buy_stock_button)
-	var assign_train_button := _add_button(dispatch_actions, "Assign Train", func(): _assign_selected_train_to_selected_line())
-	_fit_sidebar_action_button(assign_train_button)
-	var clear_train_button := _add_button(dispatch_actions, "Clear Line", func(): _clear_selected_train_line())
-	_fit_sidebar_action_button(clear_train_button)
-	var line_actions := HBoxContainer.new()
-	line_actions.add_theme_constant_override("separation", 8)
-	line_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_box.add_child(line_actions)
-	var edit_stops_button := _add_button(line_actions, "Edit Stops", func(): _toggle_line_stop_edit())
-	_fit_sidebar_action_button(edit_stops_button)
-	var complete_line_button := _add_button(line_actions, "Complete Line", func(): _complete_line_stop_edit())
-	_fit_sidebar_action_button(complete_line_button)
-	var clear_stops_button := _add_button(line_actions, "Clear Stops", func(): _clear_selected_line_stops())
-	_fit_sidebar_action_button(clear_stops_button)
-	var debug_actions := HBoxContainer.new()
-	debug_actions.add_theme_constant_override("separation", 8)
-	debug_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_box.add_child(debug_actions)
-	var debug_money_button := _add_button(debug_actions, "Debug Money +$5000", func(): _debug_replenish_money())
-	_fit_sidebar_action_button(debug_money_button)
-
-	dispatch_preview = RichTextLabel.new()
-	dispatch_preview.bbcode_enabled = true
-	dispatch_preview.scroll_active = false
-	dispatch_preview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	dispatch_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	dispatch_preview.custom_minimum_size = Vector2(0, 100)
-	dispatch_preview.add_theme_color_override("default_color", Color.html("#172028"))
-	dispatch_preview.add_theme_font_size_override("normal_font_size", 15)
-	dispatch_preview.add_theme_color_override("font_outline_color", Color(1, 0.98, 0.86, 0.7))
-	dispatch_preview.add_theme_constant_override("outline_size", 1)
-	side_box.add_child(dispatch_preview)
+	_build_mobile_overlay_ui()
 	_refresh_local_side_text()
 
 func _build_results_ui() -> void:
@@ -629,7 +1038,13 @@ func _add_button(parent: Control, text: String, callback: Callable) -> Button:
 	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	b.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
 	b.custom_minimum_size = Vector2(124, 66)
+	if parent == tool_bar:
+		b.custom_minimum_size = Vector2(0, 52)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_style_button(b)
+	if parent == hud_bar:
+		b.custom_minimum_size = Vector2(82, 38)
+		b.add_theme_font_size_override("font_size", 13)
 	b.pressed.connect(callback)
 	parent.add_child(b)
 	return b
@@ -637,6 +1052,68 @@ func _add_button(parent: Control, text: String, callback: Callable) -> Button:
 func _fit_sidebar_action_button(button: Button) -> void:
 	button.custom_minimum_size = Vector2(0, 52)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+func _build_mobile_overlay_ui() -> void:
+	context_menu_layer = Control.new()
+	context_menu_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	context_menu_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	context_menu_layer.z_index = 45
+	context_menu_layer.z_as_relative = false
+	add_child(context_menu_layer)
+
+	toast_label = Label.new()
+	toast_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	toast_label.offset_left = 18
+	toast_label.offset_top = -64
+	toast_label.offset_right = -18
+	toast_label.offset_bottom = -18
+	toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	toast_label.add_theme_font_size_override("font_size", 15)
+	toast_label.add_theme_color_override("font_color", Color.html("#172028"))
+	toast_label.add_theme_stylebox_override("normal", _flat_style(Color(1.0, 0.97, 0.82, 0.92), Color.html("#172028"), 2, 8))
+	toast_label.z_index = 35
+	toast_label.z_as_relative = false
+	add_child(toast_label)
+
+	inspect_chip = RichTextLabel.new()
+	inspect_chip.bbcode_enabled = true
+	inspect_chip.scroll_active = false
+	inspect_chip.fit_content = true
+	inspect_chip.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	inspect_chip.offset_left = 18
+	inspect_chip.offset_top = 62
+	inspect_chip.offset_right = 420
+	inspect_chip.offset_bottom = 126
+	inspect_chip.add_theme_color_override("default_color", Color.html("#172028"))
+	inspect_chip.add_theme_font_size_override("normal_font_size", 14)
+	inspect_chip.add_theme_stylebox_override("normal", _flat_style(Color(1.0, 0.97, 0.82, 0.92), Color.html("#172028"), 2, 8))
+	inspect_chip.z_index = 35
+	inspect_chip.z_as_relative = false
+	add_child(inspect_chip)
+
+	service_edit_bar = HBoxContainer.new()
+	service_edit_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	service_edit_bar.offset_left = 18
+	service_edit_bar.offset_top = -116
+	service_edit_bar.offset_right = -18
+	service_edit_bar.offset_bottom = -70
+	service_edit_bar.add_theme_constant_override("separation", 8)
+	service_edit_bar.z_index = 36
+	service_edit_bar.z_as_relative = false
+	add_child(service_edit_bar)
+
+	service_edit_label = Label.new()
+	service_edit_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	service_edit_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	service_edit_label.add_theme_font_size_override("font_size", 14)
+	service_edit_label.add_theme_color_override("font_color", Color.html("#172028"))
+	service_edit_label.add_theme_stylebox_override("normal", _flat_style(Color(1.0, 0.97, 0.82, 0.94), Color.html("#172028"), 2, 8))
+	service_edit_bar.add_child(service_edit_label)
+	var complete_button := _add_button(service_edit_bar, "Done", func(): _complete_service_edit())
+	complete_button.custom_minimum_size = Vector2(88, 44)
+	var cancel_button := _add_button(service_edit_bar, "Cancel", func(): _cancel_service_edit())
+	cancel_button.custom_minimum_size = Vector2(96, 44)
 
 func _add_tool_button(text: String, tool: String) -> void:
 	var button := _add_button(tool_bar, text, func(): _select_tool(tool))
@@ -654,13 +1131,116 @@ func _select_tool(tool: String) -> void:
 	elif selected_tool == "pair":
 		local_message = "Pair selected. Existing signal tools now toggle single and double signals directly."
 	elif selected_tool == "line":
-		local_message = "Line tool selected. Click a source station to create or select its route line."
+		local_message = "Line tool selected. Click a source station to select its first line, or use the dispatch panel to create additional lines."
 	else:
 		local_message = "Tool selected: %s" % tool.capitalize()
 	_refresh_tool_button_styles()
 	_update_status_labels()
 	_refresh_local_side_text()
 	queue_redraw()
+
+func _open_context_menu_at(screen_pos: Vector2, target_type: String, target_id: String, grid_pos: Vector2i) -> void:
+	if context_menu_layer == null:
+		return
+	_close_context_menu()
+	context_menu_open = true
+	context_target_type = target_type
+	context_target_id = target_id
+	context_target_pos = grid_pos
+	context_screen_pos = screen_pos
+	_build_radial_menu(_context_actions_for_target(target_type, target_id, grid_pos))
+	_show_inspect_chip_for_target(target_type, target_id, grid_pos)
+	queue_redraw()
+
+func _close_context_menu() -> void:
+	context_menu_open = false
+	context_target_type = ""
+	context_target_id = ""
+	context_target_pos = Vector2i(-999, -999)
+	if context_menu_layer != null:
+		_clear_control_children(context_menu_layer)
+
+func _context_actions_for_target(target_type: String, target_id: String, grid_pos: Vector2i) -> Array:
+	var actions: Array = []
+	if target_type == "station" and station_by_id.has(target_id):
+		var st: Dictionary = station_by_id[target_id]
+		if st.get("role", "") == "source":
+			actions.append({"label": "Service", "callback": func(id := target_id): _context_create_service(id)})
+			actions.append({"label": "Train", "callback": func(id := target_id): _context_buy_train_for_station(id)})
+		if _source_has_lines(target_id) or String(st.get("role", "")) != "source":
+			actions.append({"label": "Edit", "callback": func(id := target_id): _context_edit_service_for_station(id)})
+		actions.append({"label": "Platform", "callback": func(id := target_id): _add_platform_at(id)})
+	elif target_type == "train":
+		actions.append({"label": "Assign", "callback": func(id := target_id): _context_assign_train(id)})
+		actions.append({"label": "Clear", "callback": func(id := target_id): _context_clear_train_line(id)})
+		actions.append({"label": "Inspect", "callback": func(id := target_id): _show_inspect_chip_for_target("train", id, Vector2i(-999, -999))})
+	elif target_type == "signal":
+		actions.append({"label": "Rotate", "callback": func(p := grid_pos): _rotate_signal_at(p)})
+		actions.append({"label": "Pair", "callback": func(p := grid_pos): _place_signal_pair(p, _pair_signal_type_for(p))})
+		actions.append({"label": "Erase", "callback": func(p := grid_pos): _erase_signal_or_track(p)})
+	elif target_type in ["track", "tile"]:
+		if target_type == "tile":
+			actions.append({"label": "Track", "callback": func(p := grid_pos): _place_track(p)})
+		actions.append({"label": "Block", "callback": func(p := grid_pos): _place_signal(p, "block")})
+		actions.append({"label": "Chain", "callback": func(p := grid_pos): _place_signal(p, "chain")})
+		actions.append({"label": "Erase", "callback": func(p := grid_pos): _erase_signal_or_track(p)})
+	if actions.is_empty():
+		actions.append({"label": "Track", "callback": func(p := grid_pos): _place_track(p)})
+	return actions
+
+func _build_radial_menu(actions: Array) -> void:
+	if context_menu_layer == null:
+		return
+	var count: int = max(1, actions.size())
+	var radius := 72.0
+	var center := _clamped_context_center(context_screen_pos)
+	for i in range(actions.size()):
+		var action: Dictionary = actions[i]
+		var angle := -PI * 0.5 + (TAU * float(i) / float(count))
+		var pos := center + Vector2(cos(angle), sin(angle)) * radius
+		var button := Button.new()
+		button.text = String(action.get("label", "Action"))
+		button.custom_minimum_size = Vector2(82, 44)
+		button.position = pos - Vector2(41, 22)
+		button.z_index = 46
+		button.z_as_relative = false
+		_style_button(button)
+		var callback: Callable = action.get("callback", Callable())
+		button.pressed.connect(func(cb := callback): _run_context_action(cb))
+		context_menu_layer.add_child(button)
+
+func _run_context_action(callback: Callable) -> void:
+	_close_context_menu()
+	if callback.is_valid():
+		callback.call()
+	_refresh_local_side_text()
+	queue_redraw()
+
+func _clamped_context_center(screen_pos: Vector2) -> Vector2:
+	return Vector2(clamp(screen_pos.x, 110.0, max(110.0, size.x - 110.0)), clamp(screen_pos.y, 132.0, max(132.0, size.y - 132.0)))
+
+func _context_target_at(screen_pos: Vector2) -> Dictionary:
+	var station_id := _hit_station_id(screen_pos)
+	if station_id != "":
+		return {"type": "station", "id": station_id, "pos": station_by_id[station_id]["pos"]}
+	var train_id := _hit_train_id(screen_pos)
+	if train_id != "":
+		return {"type": "train", "id": train_id, "pos": Vector2i(-999, -999)}
+	var signal_pos := _hit_signal_pos(screen_pos)
+	if signal_pos.x > -900:
+		return {"type": "signal", "id": "", "pos": signal_pos}
+	var gp := _screen_to_grid(screen_pos)
+	if _is_in_grid(gp) and tracks.has(gp):
+		return {"type": "track", "id": "", "pos": gp}
+	return {"type": "tile", "id": "", "pos": gp}
+
+func _hit_station_id(pos: Vector2) -> String:
+	_update_board_layout()
+	for station_id in station_by_id.keys():
+		var st: Dictionary = station_by_id[station_id]
+		if _grid_to_screen(st["pos"]).distance_to(pos) < max(28.0, cell_size * 0.52):
+			return String(station_id)
+	return ""
 
 func _toggle_pause() -> void:
 	local["paused"] = !local.get("paused", true)
@@ -678,7 +1258,7 @@ func _return_to_region() -> void:
 	queue_redraw()
 
 func _handle_regional_click(pos: Vector2) -> void:
-	for s in scenarios:
+	for s in _regional_visible_scenarios():
 		var node_pos: Vector2 = _regional_node_position(s["id"])
 		if pos.distance_to(node_pos) <= 54.0:
 			if _scenario_is_available(s["id"]):
@@ -686,15 +1266,22 @@ func _handle_regional_click(pos: Vector2) -> void:
 			return
 
 func start_scenario(id: String) -> void:
-	var scenario := _get_scenario(id)
+	var scenario := _apply_run_pressure_to_scenario(_get_scenario(id))
 	if scenario.is_empty():
 		return
 	screen = Screen.LOCAL
 	selected_tool = "track"
 	selected_train_id = ""
 	selected_signal_pos = Vector2i(-999, -999)
+	context_menu_open = false
+	context_target_type = ""
+	context_target_id = ""
+	context_target_pos = Vector2i(-999, -999)
+	service_edit_line_id = ""
+	press_active = false
+	press_context_consumed = false
+	press_moved = false
 	erased_signal_targets.clear()
-	planning_guide_open = false
 	tracks.clear()
 	track_segments.clear()
 	signals.clear()
@@ -719,7 +1306,7 @@ func start_scenario(id: String) -> void:
 		"target": scenario["target"],
 		"fleet_goal": int(scenario.get("fleet_goal", 1)),
 		"wait_target": scenario["wait_target"],
-		"money": int(scenario["start_budget"]) + int(campaign["materials"]) * 25,
+		"money": int(scenario["start_budget"]),
 		"materials": int(campaign["materials"]),
 		"delivered": 0,
 		"processed": 0,
@@ -754,6 +1341,8 @@ func _get_scenario(id: String) -> Dictionary:
 	return {}
 
 func _scenario_is_available(id: String) -> bool:
+	if _is_run_scenario_id(id):
+		return not bool(campaign.get("run_won", false)) and (campaign.get("run_available", []) as Array).has(id)
 	if id == "coal_valley":
 		return true
 	if id == "central_yard":
@@ -766,6 +1355,23 @@ func _scenario_is_available(id: String) -> bool:
 
 func _regional_node_position(id: String) -> Vector2:
 	var y := size.y * 0.52
+	if _is_run_scenario_id(id):
+		var completed: Array = campaign.get("run_completed", [])
+		var visible_order: Array = []
+		for done_id in completed:
+			visible_order.append(String(done_id))
+		for available_id in campaign.get("run_available", []):
+			if not visible_order.has(String(available_id)):
+				visible_order.append(String(available_id))
+		var idx: int = int(max(0, visible_order.find(id)))
+		var columns: int = 5
+		var row: int = int(floor(float(idx) / float(columns)))
+		var col: int = idx % columns
+		var left: float = size.x * 0.12
+		var usable_width: float = max(460.0, size.x * 0.58)
+		var x: float = left + float(col) * (usable_width / float(columns - 1))
+		var start_y: float = size.y * 0.29
+		return Vector2(x, start_y + float(row) * 92.0)
 	if id == "coal_valley":
 		return Vector2(size.x * 0.16, y)
 	if id == "central_yard":
@@ -781,26 +1387,27 @@ func _update_board_layout() -> void:
 		return
 	_apply_local_side_panel_layout()
 	var grid: Vector2i = local["scenario"].get("grid", Vector2i(14, 9))
-	var top_reserved := 174.0
-	var bottom_reserved := 20.0
-	var horizontal_margin := 28.0
-	var briefing_width := _local_side_panel_width() if max(size.x, 640.0) >= 1024.0 else 0.0
-	var briefing_gap := 14.0 if briefing_width > 0.0 else 0.0
-	var max_cell_from_width: float = (max(size.x, 640.0) - horizontal_margin * 2.0 - briefing_width - briefing_gap) / float(grid.x)
+	var top_reserved := 64.0
+	var bottom_reserved := 72.0
+	var horizontal_margin := 16.0
+	var max_cell_from_width: float = (max(size.x, 640.0) - horizontal_margin * 2.0) / float(grid.x)
 	var max_cell_from_height: float = (max(size.y, 480.0) - top_reserved - bottom_reserved) / float(grid.y)
 	cell_size = clamp(floor(min(max_cell_from_width, max_cell_from_height)), 46.0, 78.0)
 	grid_origin = Vector2(horizontal_margin, top_reserved)
 
 func _handle_local_click(pos: Vector2) -> void:
+	var gp := _screen_to_grid(pos)
+	if editing_line_stops:
+		var add_station := _hit_line_stop_add_station(pos)
+		if add_station != "":
+			var station: Dictionary = station_by_id[add_station]
+			_append_station_to_selected_line_at(station["pos"])
+		else:
+			local_message = "Tap a station plus sign to add it to the line, or use Complete Line when finished."
+		_refresh_local_side_text()
+		queue_redraw()
+		return
 	if selected_tool != "line":
-		var hit_train := _hit_train_id(pos)
-		if hit_train != "":
-			selected_train_id = hit_train
-			selected_signal_pos = Vector2i(-999, -999)
-			dragging = false
-			_refresh_local_side_text()
-			queue_redraw()
-			return
 		if selected_tool == "erase":
 			var erase_signal := _hit_signal_pos(pos)
 			if erase_signal.x > -900:
@@ -822,25 +1429,31 @@ func _handle_local_click(pos: Vector2) -> void:
 			queue_redraw()
 			return
 		if hit_signal.x > -900 and not (selected_tool in ["block", "chain", "pair", "erase"]):
-			selected_signal_pos = hit_signal
+			_toggle_signal_pair_state(hit_signal, _signal_type(hit_signal))
 			selected_train_id = ""
 			dragging = false
 			_refresh_local_side_text()
 			queue_redraw()
 			return
-	var gp := _screen_to_grid(pos)
+	var station_id := _hit_station_id(pos)
+	if station_id != "":
+		selected_train_id = ""
+		selected_signal_pos = Vector2i(-999, -999)
+		_show_inspect_chip_for_target("station", station_id, station_by_id[station_id]["pos"])
+		_show_toast("Hold %s for actions." % station_by_id[station_id].get("name", station_id))
+		queue_redraw()
+		return
+	if selected_tool != "line":
+		var hit_train := _hit_train_id(pos)
+		if hit_train != "":
+			selected_train_id = hit_train
+			selected_signal_pos = Vector2i(-999, -999)
+			dragging = false
+			_refresh_local_side_text()
+			queue_redraw()
+			return
 	if not _is_in_grid(gp):
 		_select_train_or_signal(pos)
-		return
-	if editing_line_stops:
-		var add_station := _hit_line_stop_add_station(pos)
-		if add_station != "":
-			var station: Dictionary = station_by_id[add_station]
-			_append_station_to_selected_line_at(station["pos"])
-		else:
-			local_message = "Tap a station plus sign to add it to the line, or use Complete Line when finished."
-		_refresh_local_side_text()
-		queue_redraw()
 		return
 	if gp == last_drag_cell and selected_tool in ["track", "erase"]:
 		return
@@ -1194,9 +1807,13 @@ func _force_track_path(points: Array[Vector2i]) -> void:
 
 func _place_track(gp: Vector2i) -> void:
 	if not tracks.has(gp):
-		if _spend(25, 0):
+		if _terrain_blocks_track(gp):
+			local_message = "%s blocks new track here. Route around it." % _terrain_label(_terrain_type_at(gp))
+			return
+		var build_cost := _track_build_cost(gp)
+		if _spend(build_cost, 0):
 			tracks[gp] = true
-			local["infra_cost"] += 25
+			local["infra_cost"] += build_cost
 		else:
 			return
 		local_message = "Track placed. Drag from one rail tile to another to create exact connections."
@@ -1231,10 +1848,14 @@ func _place_track_path(from_cell: Vector2i, to_cell: Vector2i) -> void:
 		if not _is_in_grid(p):
 			continue
 		if not tracks.has(p):
-			if not _spend(25, 0):
+			if _terrain_blocks_track(p):
+				local_message = "%s blocks the track run at %s. Route around it." % [_terrain_label(_terrain_type_at(p)), _tile_label(p)]
+				break
+			var build_cost := _track_build_cost(p)
+			if not _spend(build_cost, 0):
 				break
 			tracks[p] = true
-			local["infra_cost"] += 25
+			local["infra_cost"] += build_cost
 			changed += 1
 		if _is_in_grid(last_valid) and _add_track_segment(last_valid, p):
 			changed += 1
@@ -1301,7 +1922,6 @@ func _place_signal(gp: Vector2i, signal_type: String) -> void:
 	if not tracks.has(gp):
 		local_message = "Signals need track."
 		return
-	var material_cost := 1 if signal_type == "chain" else 0
 	var money_cost := 120 if signal_type == "chain" else 80
 	if signals.has(gp):
 		if _signal_type(gp) == signal_type:
@@ -1312,7 +1932,7 @@ func _place_signal(gp: Vector2i, signal_type: String) -> void:
 		local_message = "Signal changed to %s. Click again to toggle single or double." % signal_type
 		_compute_blocks()
 		return
-	if _spend(money_cost, material_cost):
+	if _spend(money_cost):
 		_clear_erased_signal_target(gp)
 		_set_signal(gp, signal_type, _default_signal_dir(gp))
 		selected_signal_pos = gp
@@ -1324,7 +1944,6 @@ func _place_signal_pair(gp: Vector2i, signal_type: String) -> void:
 	if not tracks.has(gp):
 		local_message = "Paired signals need track."
 		return
-	var material_cost := 1 if signal_type == "chain" else 0
 	var money_cost := 210 if signal_type == "chain" else 140
 	if signals.has(gp):
 		if _signal_type(gp) == signal_type and _signal_dirs(gp).size() > 1:
@@ -1336,7 +1955,7 @@ func _place_signal_pair(gp: Vector2i, signal_type: String) -> void:
 		local_message = "Paired %s signal set. Rotate Sig changes the protected axis." % signal_type
 		_compute_blocks()
 		return
-	if _spend(money_cost, material_cost):
+	if _spend(money_cost):
 		_clear_erased_signal_target(gp)
 		_set_signal(gp, signal_type, _default_signal_dir(gp))
 		_replace_signal_set(gp, signal_type, _paired_signal_dirs(gp))
@@ -1352,35 +1971,157 @@ func _add_platform() -> void:
 			if station_by_id[id].get("role", "") in ["yard", "sink", "processor"]:
 				target_id = id
 				break
-	if target_id == "" or not _spend(200, 1):
+	if target_id == "":
 		return
-	station_by_id[target_id]["platforms"] = int(station_by_id[target_id].get("platforms", 1)) + 1
+	_add_platform_at(target_id)
+
+func _add_platform_at(station_id: String) -> void:
+	if not station_by_id.has(station_id) or not _spend(200):
+		return
+	station_by_id[station_id]["platforms"] = int(station_by_id[station_id].get("platforms", 1)) + 1
 	local["infra_cost"] += 200
-	local_message = "%s now has %d platforms." % [station_by_id[target_id]["name"], station_by_id[target_id]["platforms"]]
+	local_message = "%s now has %d platforms." % [station_by_id[station_id]["name"], station_by_id[station_id]["platforms"]]
 	_refresh_local_side_text()
 
-func _line_id_for_source(source_id: String) -> String:
-	return "line_%s" % source_id
+func _context_create_service(source_id: String) -> void:
+	if not station_by_id.has(source_id):
+		return
+	var line_id := _create_new_line_for_source(source_id) if _source_has_lines(source_id) else _create_or_get_line_for_source(source_id)
+	if line_id == "":
+		local_message = "No service can start at %s." % station_by_id[source_id].get("name", source_id)
+		return
+	lines[line_id]["route"] = []
+	lines[line_id]["name"] = _line_name_for_route([source_id], int(lines[line_id].get("ordinal", 1)))
+	_reapply_line_to_assigned_trains(line_id)
+	_start_service_edit(line_id)
 
-func _line_name_for_route(route: Array) -> String:
+func _context_edit_service_for_station(station_id: String) -> void:
+	var line_id := _line_id_for_station_context(station_id)
+	if line_id == "":
+		local_message = "Create a service from a source station first."
+		return
+	_start_service_edit(line_id)
+
+func _line_id_for_station_context(station_id: String) -> String:
+	if selected_line_id != "" and lines.has(selected_line_id):
+		return selected_line_id
+	for line_id in lines.keys():
+		var route: Array = lines[line_id].get("route", [])
+		if route.has(station_id):
+			return String(line_id)
+	for line_id in lines.keys():
+		if _source_id_for_line(lines[line_id]) == station_id:
+			return String(line_id)
+	return ""
+
+func _start_service_edit(line_id: String) -> void:
+	if not lines.has(line_id):
+		return
+	selected_line_id = line_id
+	service_edit_line_id = line_id
+	editing_line_stops = true
+	selected_tool = "line"
+	local_message = "Editing %s. Tap station plus signs, then Done." % lines[line_id]["name"]
+	_refresh_tool_button_styles()
+	_refresh_local_side_text()
+	queue_redraw()
+
+func _complete_service_edit() -> void:
+	_complete_line_stop_edit()
+	service_edit_line_id = ""
+
+func _cancel_service_edit() -> void:
+	editing_line_stops = false
+	service_edit_line_id = ""
+	selected_tool = "track"
+	local_message = "Service editing canceled."
+	_refresh_tool_button_styles()
+	_refresh_local_side_text()
+	queue_redraw()
+
+func _context_buy_train_for_station(source_id: String) -> void:
+	if not station_by_id.has(source_id):
+		return
+	_buy_train_at(station_by_id[source_id]["pos"])
+
+func _context_assign_train(train_id: String) -> void:
+	selected_train_id = train_id
+	if selected_line_id == "" or not lines.has(selected_line_id):
+		selected_line_id = _first_valid_line_id()
+	if selected_line_id == "":
+		local_message = "Create a service before assigning trains."
+		return
+	_assign_selected_train_to_selected_line()
+
+func _context_clear_train_line(train_id: String) -> void:
+	selected_train_id = train_id
+	_clear_selected_train_line()
+
+func _first_valid_line_id() -> String:
+	for line_id in lines.keys():
+		if _line_has_valid_orders(String(line_id)):
+			return String(line_id)
+	return ""
+
+func _line_id_for_source(source_id: String, ordinal: int = 1) -> String:
+	if ordinal <= 1:
+		return "line_%s" % source_id
+	return "line_%s_%d" % [source_id, ordinal]
+
+func _line_name_for_route(route: Array, ordinal: int = 1) -> String:
 	if route.is_empty():
 		return "Line"
 	var first: Dictionary = station_by_id[route[0]]
 	var last: Dictionary = station_by_id[route[max(0, route.size() - 1)]]
-	return "%s Line" % first.get("name", last.get("name", "Route"))
+	var base := "%s Line" % first.get("name", last.get("name", "Route"))
+	if ordinal > 1:
+		return "%s %d" % [base, ordinal]
+	return base
 
 func _create_or_get_line_for_source(source_id: String) -> String:
+	return _create_line_for_source(source_id, false)
+
+func _create_new_line_for_source(source_id: String) -> String:
+	return _create_line_for_source(source_id, true)
+
+func _create_line_for_source(source_id: String, force_new: bool) -> String:
 	var route: Array = _route_for_source(source_id)
 	if route.is_empty():
 		return ""
-	var line_id: String = _line_id_for_source(source_id)
-	if not lines.has(line_id):
-		lines[line_id] = {
-			"id": line_id,
-			"name": _line_name_for_route(route),
-			"route": route
-		}
+	var ordinal := _next_line_ordinal_for_source(source_id) if force_new else 1
+	var line_id: String = _line_id_for_source(source_id, ordinal)
+	if lines.has(line_id):
+		return line_id
+	lines[line_id] = {
+		"id": line_id,
+		"name": _line_name_for_route(route, ordinal),
+		"route": route,
+		"source_id": source_id,
+		"ordinal": ordinal
+	}
 	return line_id
+
+func _next_line_ordinal_for_source(source_id: String) -> int:
+	var highest := 0
+	for line_id in lines.keys():
+		var line: Dictionary = lines[line_id]
+		if _source_id_for_line(line) == source_id:
+			highest = max(highest, int(line.get("ordinal", 1)))
+	return highest + 1
+
+func _source_has_lines(source_id: String) -> bool:
+	for line_id in lines.keys():
+		if _source_id_for_line(lines[line_id]) == source_id:
+			return true
+	return false
+
+func _source_id_for_line(line: Dictionary) -> String:
+	if line.has("source_id"):
+		return String(line["source_id"])
+	var route: Array = line.get("route", [])
+	if not route.is_empty():
+		return String(route[0])
+	return ""
 
 func _select_or_create_line_at(gp: Vector2i) -> void:
 	if not station_by_pos.has(gp):
@@ -1396,7 +2137,7 @@ func _select_or_create_line_at(gp: Vector2i) -> void:
 		local_message = "No route template starts at %s." % st.get("name", "that station")
 		return
 	selected_line_id = line_id
-	local_message = "%s selected. Select an available train, then assign it to this line." % lines[line_id]["name"]
+	local_message = "%s selected. Select an available train, assign it, or create another line from this source in the dispatch panel." % lines[line_id]["name"]
 
 func _selected_line_route() -> Array:
 	if selected_line_id == "" or not lines.has(selected_line_id):
@@ -1484,15 +2225,6 @@ func _toggle_signal_help() -> void:
 	_refresh_local_side_text()
 	queue_redraw()
 
-func _toggle_planning_guide() -> void:
-	planning_guide_open = not planning_guide_open
-	if planning_guide_open:
-		local_message = "Planning guide shown. Treat it as one proven pattern, then adapt it to your own network."
-	else:
-		local_message = "Planning guide hidden. Use train status, queues, and block colors to tune your design."
-	_refresh_local_side_text()
-	queue_redraw()
-
 func _line_train_count(line_id: String) -> int:
 	var count := 0
 	for t in trains:
@@ -1575,10 +2307,11 @@ func _clear_control_children(node: Node) -> void:
 func _add_dispatch_button(parent: Control, text: String, selected: bool, callback: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(0, 52)
+	b.custom_minimum_size = Vector2(0, 38)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.pressed.connect(callback)
 	_style_button(b, selected)
+	b.add_theme_font_size_override("font_size", 13)
 	parent.add_child(b)
 	return b
 
@@ -1590,6 +2323,14 @@ func _select_line_from_dispatch(line_id: String) -> void:
 
 func _create_line_from_dispatch(source_id: String) -> void:
 	var line_id := _create_or_get_line_for_source(source_id)
+	if line_id == "":
+		local_message = "No service template starts at %s." % source_id
+		_refresh_local_side_text()
+		return
+	_select_line_from_dispatch(line_id)
+
+func _create_new_line_from_dispatch(source_id: String) -> void:
+	var line_id := _create_new_line_for_source(source_id)
 	if line_id == "":
 		local_message = "No service template starts at %s." % source_id
 		_refresh_local_side_text()
@@ -1655,7 +2396,7 @@ func _append_station_to_selected_line_at(gp: Vector2i) -> void:
 		return
 	route.append(station_id)
 	lines[selected_line_id]["route"] = route
-	lines[selected_line_id]["name"] = _line_name_for_route(route)
+	lines[selected_line_id]["name"] = _line_name_for_route(route, int(lines[selected_line_id].get("ordinal", 1)))
 	_reapply_line_to_assigned_trains(selected_line_id)
 	local_message = "Added %s to %s." % [station_by_id[station_id]["name"], lines[selected_line_id]["name"]]
 
@@ -1737,7 +2478,7 @@ func _refresh_dispatch_panel() -> void:
 		for line_id in lines.keys():
 			var line: Dictionary = lines[line_id]
 			var route: Array = line.get("route", [])
-			var status := "%d stops, %d trains" % [route.size(), _line_train_count(line_id)]
+			var status := "%d stops | %d trains" % [route.size(), _line_train_count(line_id)]
 			if route.size() < 2:
 				status = "needs stops"
 			var label := "%s\n%s" % [line["name"], status]
@@ -1745,9 +2486,9 @@ func _refresh_dispatch_panel() -> void:
 	for station_id in station_by_id.keys():
 		var st: Dictionary = station_by_id[station_id]
 		if st.get("role", "") == "source":
-			var line_id := _line_id_for_source(station_id)
-			if not lines.has(line_id) and not _route_for_source(station_id).is_empty():
-				_add_dispatch_button(dispatch_line_box, "Create\n%s Line" % st["name"], false, func(id := String(station_id)): _create_line_from_dispatch(id))
+			if not _route_for_source(station_id).is_empty():
+				var label := "New\n%s Line" % st["name"] if _source_has_lines(station_id) else "Create\n%s Line" % st["name"]
+				_add_dispatch_button(dispatch_line_box, label, false, func(id := String(station_id)): _create_new_line_from_dispatch(id))
 
 	var train_header := Label.new()
 	train_header.text = "Trains"
@@ -1769,13 +2510,24 @@ func _refresh_dispatch_panel() -> void:
 			var state_label := String(t.get("state", ""))
 			if not _is_train_on_map(t) and String(t.get("line_id", "")) != "":
 				state_label = "Queued in depot"
-			var next_label := ""
+			var next_label := " -"
 			if String(t.get("line_id", "")) != "" and not (t.get("route", []) as Array).is_empty():
-				next_label = "\nNext: %s" % _next_stop_name_for_train(t)
-			var label := "%s  %s\n%s\n%s%s" % [train_id, cargo_text, line_label, state_label, next_label]
+				next_label = " -> %s" % _next_stop_name_for_train(t)
+			var label := "%s  %s  %s\n%s%s" % [train_id, cargo_text, state_label, _short_ui_text(line_label, 28), next_label]
 			_add_dispatch_button(dispatch_train_box, label, train_id == selected_train_id, func(id := train_id): _select_train_from_dispatch(id))
 
 	dispatch_preview.text = _line_cargo_preview(selected_line_id)
+
+func _train_card_issue_label(t: Dictionary) -> String:
+	var state := String(t.get("state", ""))
+	if not (state in ["NoRoute", "WaitingAtSignal", "Blocked", "WaitingForOrders", "WaitingForPlatform"]):
+		return ""
+	var reason := _display_reason_for_train(t)
+	if reason == "" or reason == "Moving normally.":
+		return ""
+	if reason.length() > 72:
+		reason = reason.substr(0, 69) + "..."
+	return "\nWhy: %s" % reason
 
 func _assign_train_to_line(t: Dictionary, line_id: String) -> void:
 	if not _line_has_valid_orders(line_id):
@@ -1970,15 +2722,11 @@ func _try_dispatch_train_from_depot(t: Dictionary) -> bool:
 	_plan_next_path(t)
 	return true
 
-func _spend(money: int, materials: int) -> bool:
+func _spend(money: int, _materials: int = 0) -> bool:
 	if int(local.get("money", 0)) < money:
 		local_message = "Not enough money."
 		return false
-	if int(local.get("materials", 0)) < materials:
-		local_message = "Not enough materials."
-		return false
 	local["money"] = int(local["money"]) - money
-	local["materials"] = int(local["materials"]) - materials
 	return true
 
 func _update_local(delta: float) -> void:
@@ -2165,7 +2913,7 @@ func _process_cargo_at_station(t: Dictionary, st: Dictionary) -> void:
 			t["cargo_amount"] = 0
 
 func _record_productive_output(amount: int) -> void:
-	if _active_train_count() >= _fleet_goal():
+	if amount > 0:
 		local["productive_progress"] = int(local.get("productive_progress", 0)) + amount
 
 func _plan_next_path(t: Dictionary) -> void:
@@ -2502,7 +3250,7 @@ func _complete_scenario() -> void:
 	result_data = {
 		"id": local["id"],
 		"name": local["name"],
-		"text": "[b]%s[/b]\n\n%s: %d / %d\nTotal Output: %d\nFleet: %d / %d trains\nAverage Train Wait: %.1fs / %.0fs target\nDeadlocks: %d\nMaximum Queue: %d\nInfrastructure Cost: $%d\n\nRegional Effect:\n+$%d per cycle\n+%d Materials per cycle\n+%d Traffic Load\n+%d Traffic Capacity" % [
+		"text": "[b]%s[/b]\n\n%s: %d / %d\nTotal Output: %d\nFleet: %d / %d trains\nAverage Train Wait: %.1fs / %.0fs target\nDeadlocks: %d\nMaximum Queue: %d\nInfrastructure Cost: $%d\n\nRegional Effect:\n+$%d per cycle\n+%d Traffic Load\n+%d Traffic Capacity" % [
 			quality,
 			_progress_label(),
 			_completion_progress(),
@@ -2516,7 +3264,6 @@ func _complete_scenario() -> void:
 			int(local.get("max_queue", 0)),
 			int(local.get("infra_cost", 0)),
 			int(sc.get("reward_money", 0)),
-			int(sc.get("reward_materials", 0)),
 			int(sc.get("reward_load", 0)),
 			int(sc.get("reward_capacity", 0))
 		]
@@ -2524,9 +3271,9 @@ func _complete_scenario() -> void:
 	if not campaign["completed"].has(local["id"]):
 		campaign["completed"].append(local["id"])
 		campaign["money"] = int(campaign["money"]) + int(sc.get("reward_money", 0))
-		campaign["materials"] = int(campaign["materials"]) + int(sc.get("reward_materials", 0))
 		campaign["traffic_load"] = int(campaign["traffic_load"]) + int(sc.get("reward_load", 0))
 		campaign["traffic_capacity"] = int(campaign["traffic_capacity"]) + int(sc.get("reward_capacity", 0))
+		_record_run_completion(sc, avg_wait, productive)
 		_save_campaign()
 	screen = Screen.RESULTS
 	rebuild_ui()
@@ -2632,24 +3379,52 @@ func _is_in_grid(p: Vector2i) -> bool:
 	var grid: Vector2i = local.get("scenario", {}).get("grid", Vector2i(14, 9))
 	return p.x >= 0 and p.y >= 0 and p.x < grid.x and p.y < grid.y
 
+func _terrain_type_at(p: Vector2i) -> String:
+	var scenario: Dictionary = local.get("scenario", {})
+	for item in scenario.get("terrain", []):
+		if item.get("pos", Vector2i(-999, -999)) == p:
+			return String(item.get("type", ""))
+	return ""
+
+func _terrain_blocks_track(p: Vector2i) -> bool:
+	if station_by_pos.has(p):
+		return false
+	var terrain_type := _terrain_type_at(p)
+	return terrain_type in ["mountain", "rock", "ocean"]
+
+func _track_build_cost(p: Vector2i) -> int:
+	var terrain_type := _terrain_type_at(p)
+	if terrain_type == "river":
+		return 85
+	return 25
+
+func _terrain_label(terrain_type: String) -> String:
+	if terrain_type == "mountain":
+		return "Mountain"
+	if terrain_type == "rock":
+		return "Rock"
+	if terrain_type == "river":
+		return "River"
+	if terrain_type == "ocean":
+		return "Ocean"
+	return "Terrain"
+
 func _update_status_labels() -> void:
 	if top_status == null:
 		return
 	if screen == Screen.REGIONAL:
 		var warning := "  Network Congested: income reduced" if int(campaign["traffic_load"]) > int(campaign["traffic_capacity"]) else ""
-		top_status.text = "Money: $%d   Materials: %d   Traffic: %d / %d%s" % [campaign["money"], campaign["materials"], campaign["traffic_load"], campaign["traffic_capacity"], warning]
+		top_status.text = "Money: $%d   Traffic: %d / %d%s" % [campaign["money"], campaign["traffic_load"], campaign["traffic_capacity"], warning]
 	elif screen == Screen.LOCAL:
-		top_status.text = "%s   Money: $%d   Materials: %d   %s: %d / %d   Avg Wait: %.1fs   Fleet: %d / %d   Tool: %s" % [
+		top_status.text = "%s | %d/%d %s | $%d | Fleet %d/%d | Wait %.0fs" % [
 			local.get("name", ""),
-			local.get("money", 0),
-			local.get("materials", 0),
-			_progress_label(),
 			_completion_progress(),
 			local.get("target", 0),
-			_average_wait(),
+			_progress_label(),
+			local.get("money", 0),
 			_active_train_count(),
 			_fleet_goal(),
-			selected_tool.capitalize()
+			_average_wait()
 		]
 	else:
 		top_status.text = "Scenario results"
@@ -2657,66 +3432,136 @@ func _update_status_labels() -> void:
 func _refresh_regional_side_text() -> void:
 	if side_text == null:
 		return
-	var text: String = "[b]Regional Network[/b]\n\n"
-	text += "Completed local maps permanently add outputs to this small region.\n\n"
-	for s in scenarios:
-		var state := "Completed" if campaign["completed"].has(s["id"]) else ("Available" if _scenario_is_available(s["id"]) else "Locked")
+	_ensure_run_state()
+	var traits: Dictionary = campaign.get("regional_traits", {})
+	var text: String = "[b]Roguelike Regional Run[/b]\n\n"
+	text += "Complete %d interacting contracts. Each completed node adds output, traffic, capacity, and reliability pressure to later maps.\n\n" % RUN_LENGTH
+	text += "Run Progress: %d / %d\n" % [int(campaign.get("run_step", 0)), RUN_LENGTH]
+	text += "Current Choices: %d / %d\n" % [(campaign.get("run_available", []) as Array).size(), RUN_CHOICES]
+	text += "Through Traffic: %d\nCapacity Rating: %d\nReliability: %.0f%%\nCoal: %d  Freight: %d  Steel: %d\n\n" % [
+		int(traits.get("through_traffic", 0)),
+		int(traits.get("capacity_rating", 0)),
+		float(traits.get("reliability", 1.0)) * 100.0,
+		int(traits.get("coal_output", 0)),
+		int(traits.get("freight_output", 0)),
+		int(traits.get("steel_output", 0))
+	]
+	if bool(campaign.get("run_won", false)):
+		text += "[color=green][b]Run Complete[/b][/color]\nThe region survived the full 20-map expansion.\n\n"
+	text += "[b]Available Contracts[/b]\n"
+	for s in _regional_visible_scenarios():
+		var id := String(s.get("id", ""))
+		if not _is_run_scenario_id(id):
+			continue
+		var state := "Completed" if _run_completed_has(id) else ("Available" if _scenario_is_available(id) else "Locked")
 		text += "[b]%s[/b] - %s\n%s\n\n" % [s["name"], state, s["objective"]]
+	text += "[b]Tutorial Contracts[/b]\n"
+	for s in scenarios:
+		var id := String(s.get("id", ""))
+		if _is_run_scenario_id(id):
+			continue
+		var state := "Completed" if campaign["completed"].has(id) else ("Available" if _scenario_is_available(id) else "Locked")
+		text += "%s - %s\n" % [s["name"], state]
 	if int(campaign["traffic_load"]) > int(campaign["traffic_capacity"]):
 		text += "[color=orange]Network Congested[/color]\nTraffic load exceeds capacity. Future maps begin under extra pressure.\n"
 	side_text.text = text
 
 func _refresh_local_side_text() -> void:
-	if side_text == null or screen != Screen.LOCAL:
+	if screen != Screen.LOCAL:
 		return
-	var scenario: Dictionary = local.get("scenario", {})
-	var text: String = "[font_size=21][b]%s[/b][/font_size]\n" % local.get("name", "")
-	text += "[b]Objectives[/b]\n"
-	text += "%s: %d / %d\n" % [_progress_label(), _completion_progress(), int(local.get("target", 0))]
-	if _fleet_goal() > 1:
-		text += "Total output: %d\n" % _objective_progress()
-	text += "Running fleet: %d / %d trains\n" % [_active_train_count(), _fleet_goal()]
-	text += "Depot stock: %d available\n" % _available_train_count()
-	text += "Average wait target: %.0fs\n\n" % float(local.get("wait_target", 0.0))
-	if scenario.get("briefing", "") != "":
-		text += "[b]Contract Brief[/b]\n%s\n\n" % scenario["briefing"]
-	if scenario.get("guide_label", "") != "":
-		var guide_state := "shown" if planning_guide_open else "hidden"
-		text += "[b]Planning Guide[/b]\n%s It is currently %s.\n\n" % [scenario["guide_label"], guide_state]
-	text += "[b]Signals[/b]\n"
-	text += "Block: use on straight track after stations or junction exits. Green means the next section is clear.\n"
-	text += "Chain: use before a junction. Green means the train can enter and also leave the junction.\n"
-	text += "Double: click an existing block or chain signal again to protect both directions on that rail tile.\n"
-	text += "Right-hand running: on double track, route eastbound trains on the lower/south rail and westbound trains on the upper/north rail.\n"
-	if signal_help_open:
-		text += "Signal Help: colored rail sections are blocks. Red sections contain a train or a reserved path. Click a signal to see exactly what it faces.\n"
-	text += "\n"
-	text += "[b]Message[/b]\n%s\n\n" % local_message
-	text += "[b]Controls[/b]\nDrag Track to draw rail. Create/select a line, Edit Stops, tap station plus signs, then Complete Line. Assign depot trains to finished lines. Plan Guide shows one possible layout. Signal Help shows blocks. Restart Trains keeps infrastructure; Reset Map clears it.\n\n"
+	var text: String = "[b]%s[/b]  %s %d/%d  Fleet %d/%d  Wait %.0fs\n" % [
+		local.get("name", ""),
+		_progress_label(),
+		_completion_progress(),
+		int(local.get("target", 0)),
+		_active_train_count(),
+		_fleet_goal(),
+		_average_wait()
+	]
+	text += "$%d  Depot %d  Tool %s" % [int(local.get("money", 0)), _available_train_count(), selected_tool.capitalize()]
 	if selected_train_id != "":
 		for t in trains:
 			if t["id"] == selected_train_id:
-				text += "[b]%s[/b]\nState: %s\nCargo: %s %d/%d\nNext stop: %s\nNext rail leg: %s\nReason: %s\nSuggestion: %s\n\n" % [
-					t["name"],
-					t["state"],
-					t.get("cargo", "none") if t.get("cargo", "") != "" else "none",
-					t.get("cargo_amount", 0),
-					t.get("capacity", 0),
-					_next_stop_name_for_train(t),
-					_next_leg_name_for_train(t),
-					_display_reason_for_train(t),
-					_suggestion_for_train(t)
-				]
-				if String(t.get("line_id", "")) != "" and lines.has(t["line_id"]):
-					text += "Line: %s\n\n" % lines[t["line_id"]]["name"]
+				text += "\n[b]%s[/b] %s -> %s. %s" % [t["id"], String(t.get("state", "")), _next_stop_name_for_train(t), _short_train_hint(t)]
+				break
 	if selected_signal_pos.x > -900:
 		var bid := int(block_for_tile.get(selected_signal_pos, -1))
-		text += "[b]Selected Signal[/b]\nType: %s\nFacing: %s\nBlock: %s\nStatus: %s\nUse: %s\n\n" % [_signal_type(selected_signal_pos), _dir_name(_signal_dir(selected_signal_pos)), bid, _signal_summary(selected_signal_pos), _signal_use_text(selected_signal_pos)]
-	text += "[b]Stats[/b]\nDeadlocks: %d\nMax Queue: %d\nInfrastructure Cost: $%d\n" % [local.get("deadlocks", 0), local.get("max_queue", 0), local.get("infra_cost", 0)]
+		text += "\n[b]Signal[/b] %s %s, block %s, %s" % [_signal_type(selected_signal_pos), _dir_name(_signal_dir(selected_signal_pos)), bid, _signal_summary(selected_signal_pos)]
+	if local_message != "":
+		text += "\n%s" % _short_ui_text(local_message, 96)
+	text += "\nDeadlocks %d  Queue %d  Infra $%d" % [local.get("deadlocks", 0), local.get("max_queue", 0), local.get("infra_cost", 0)]
 	if local.get("kind", "") == "steel":
-		text += "Steelworks buffer: %d steel\n" % int(local.get("steel_buffer", 0))
-	side_text.text = text
+		text += "  Steel %d" % int(local.get("steel_buffer", 0))
+	if side_text != null:
+		side_text.text = text
+	_show_toast(local_message)
+	_refresh_inspect_chip()
+	_refresh_service_edit_bar()
+	_update_status_labels()
 	_refresh_dispatch_panel()
+
+func _show_toast(message: String) -> void:
+	if toast_label == null:
+		return
+	toast_label.text = _short_ui_text(message, 96) if message != "" else "Drag to build track. Hold anything for actions."
+
+func _refresh_inspect_chip() -> void:
+	if inspect_chip == null:
+		return
+	if selected_train_id != "":
+		_show_inspect_chip_for_target("train", selected_train_id, Vector2i(-999, -999))
+		return
+	if selected_signal_pos.x > -900:
+		_show_inspect_chip_for_target("signal", "", selected_signal_pos)
+		return
+	inspect_chip.text = ""
+	inspect_chip.visible = false
+
+func _show_inspect_chip_for_target(target_type: String, target_id: String, grid_pos: Vector2i) -> void:
+	if inspect_chip == null:
+		return
+	var text := ""
+	if target_type == "train":
+		for t in trains:
+			if String(t.get("id", "")) == target_id:
+				text = "[b]%s[/b] %s  %s\nNext: %s  %s" % [
+					t.get("id", target_id),
+					String(t.get("state", "")),
+					_cargo_label(t),
+					_next_stop_name_for_train(t),
+					_short_train_hint(t)
+				]
+				break
+	elif target_type == "signal" and grid_pos.x > -900:
+		var bid := int(block_for_tile.get(grid_pos, -1))
+		text = "[b]Signal[/b] %s %s\nBlock %s  %s" % [_signal_type(grid_pos), _dir_name(_signal_dir(grid_pos)), bid, _signal_summary(grid_pos)]
+	elif target_type == "station" and station_by_id.has(target_id):
+		var st: Dictionary = station_by_id[target_id]
+		text = "[b]%s[/b]\n%s %s  P%d" % [st.get("name", target_id), _station_output_badge_text(st), _station_need_badge_text(st), int(st.get("platforms", 1))]
+	elif grid_pos.x > -900:
+		text = "[b]%s[/b] %s" % [target_type.capitalize(), _tile_label(grid_pos)]
+	inspect_chip.text = text
+	inspect_chip.visible = text != ""
+
+func _refresh_service_edit_bar() -> void:
+	if service_edit_bar == null or service_edit_label == null:
+		return
+	service_edit_bar.visible = editing_line_stops and selected_line_id != "" and lines.has(selected_line_id)
+	if not service_edit_bar.visible:
+		return
+	var route: Array = lines[selected_line_id].get("route", [])
+	service_edit_label.text = "%s: %s" % [lines[selected_line_id].get("name", "Service"), _route_station_names(route, true) if not route.is_empty() else "tap station +"]
+
+func _short_train_hint(t: Dictionary) -> String:
+	var reason := _display_reason_for_train(t)
+	if reason == "" or reason == "Moving normally.":
+		return "Next rail: %s" % _next_leg_name_for_train(t)
+	return _short_ui_text(reason, 74)
+
+func _short_ui_text(text: String, limit: int) -> String:
+	if text.length() <= limit:
+		return text
+	return text.substr(0, max(0, limit - 3)) + "..."
 
 func _suggestion_for_train(t: Dictionary) -> String:
 	var reason := _display_reason_for_train(t)
@@ -2860,19 +3705,36 @@ func _draw() -> void:
 func _draw_regional() -> void:
 	if art_texture:
 		draw_texture_rect(art_texture, Rect2(Vector2(size.x - 520, size.y - 500), Vector2(450, 450)), false, Color(1, 1, 1, 0.32))
-	var ids := ["coal_valley", "central_yard", "steelworks", "overtake_pass"]
-	for i in range(ids.size() - 1):
-		_draw_piece(game_track_texture, (_regional_node_position(ids[i]) + _regional_node_position(ids[i + 1])) * 0.5, Vector2(330, 74), 0.0, Color(1, 1, 1, 0.72))
-	for s in scenarios:
-		var p := _regional_node_position(s["id"])
-		var completed: bool = campaign["completed"].has(s["id"])
-		var available: bool = _scenario_is_available(s["id"])
+	var visible := _regional_visible_scenarios()
+	var previous_run_pos := Vector2.INF
+	for s in visible:
+		var id := String(s["id"])
+		var p := _regional_node_position(id)
+		if _is_run_scenario_id(id):
+			if previous_run_pos != Vector2.INF:
+				var delta := p - previous_run_pos
+				_draw_piece(game_track_texture, (p + previous_run_pos) * 0.5, Vector2(delta.length(), 54), delta.angle(), Color(1, 1, 1, 0.58))
+			previous_run_pos = p
+	for s in visible:
+		var id := String(s["id"])
+		var p := _regional_node_position(id)
+		var completed: bool = campaign["completed"].has(id)
+		var available: bool = _scenario_is_available(id)
 		var col: Color = Color.html("#78d891") if completed else (Color.html("#ffe06d") if available else Color.html("#a5afb4"))
-		if not _draw_piece(game_regional_node_texture, p, Vector2(122, 122), 0.0, col):
+		var draw_size := Vector2(104, 104) if _is_run_scenario_id(id) else Vector2(86, 86)
+		if not _draw_piece(game_regional_node_texture, p, draw_size, 0.0, col):
 			draw_circle(p, 54, col)
 			draw_circle(p, 46, Color(1, 1, 1, 0.38))
-		_draw_map_label(p + Vector2(-64, 84), String(s["name"]), 128, 17)
-		_draw_map_label(p + Vector2(-48, 106), "Click" if available else ("Done" if completed else "Locked"), 96, 14, Color(1.0, 0.98, 0.84, 1.0))
+		_draw_map_label(p + Vector2(-64, 66), String(s["name"]), 128, 15)
+		var status := "Click" if available else ("Done" if completed else "Locked")
+		if _is_run_scenario_id(id) and completed:
+			status = "Run %d" % _run_completion_index(id)
+		_draw_map_label(p + Vector2(-48, 88), status, 96, 13, Color(1.0, 0.98, 0.84, 1.0))
+
+func _run_completion_index(id: String) -> int:
+	var completed: Array = campaign.get("run_completed", [])
+	var idx := completed.find(id)
+	return idx + 1 if idx >= 0 else 0
 
 func _draw_results_background() -> void:
 	if art_texture:
@@ -2905,6 +3767,9 @@ func _cargo_label(t: Dictionary) -> String:
 
 func _cargo_badge_color(t: Dictionary) -> Color:
 	var cargo := String(t.get("cargo", ""))
+	return _resource_color(cargo)
+
+func _resource_color(cargo: String) -> Color:
 	if cargo == "coal":
 		return Color.html("#d8d2bd")
 	if cargo == "freight":
@@ -2912,6 +3777,11 @@ func _cargo_badge_color(t: Dictionary) -> Color:
 	if cargo == "steel":
 		return Color.html("#bfe3f6")
 	return Color.html("#eef3e8")
+
+func _resource_name(cargo: String) -> String:
+	if cargo == "":
+		return ""
+	return cargo.to_upper()
 
 func _draw_train_cargo_badge(t: Dictionary, center: Vector2) -> void:
 	var badge_text := _cargo_label(t)
@@ -3004,13 +3874,13 @@ func _draw_local() -> void:
 	else:
 		draw_rect(grid_rect.grow(8), Color.html("#c9e7bd"))
 	draw_rect(grid_rect, Color(0.97, 0.94, 0.78, 0.72))
+	_draw_terrain()
 	for x in range(grid.x + 1):
 		var gx := grid_origin.x + float(x) * cell_size
 		draw_line(Vector2(gx, grid_origin.y), Vector2(gx, grid_origin.y + float(grid.y) * cell_size), Color(0.28, 0.45, 0.32, 0.16), 1.0)
 	for y in range(grid.y + 1):
 		var gy := grid_origin.y + float(y) * cell_size
 		draw_line(Vector2(grid_origin.x, gy), Vector2(grid_origin.x + float(grid.x) * cell_size, gy), Color(0.28, 0.45, 0.32, 0.16), 1.0)
-	_draw_ghost_route()
 	_draw_track_drag_preview()
 	_draw_tracks()
 	_draw_blocks()
@@ -3019,23 +3889,37 @@ func _draw_local() -> void:
 	_draw_train_route_hints()
 	_draw_trains()
 
-func _draw_ghost_route() -> void:
-	if not planning_guide_open:
-		return
-	var ghost: Array = local["scenario"].get("ghost", [])
-	for i in range(ghost.size() - 1):
-		var a: Vector2i = ghost[i]
-		var b: Vector2i = ghost[i + 1]
-		if _is_adjacent_track_step(a, b) and not _has_track_segment(a, b):
-			var ac := _grid_to_screen(a)
-			var bc := _grid_to_screen(b)
-			var delta := bc - ac
-			if not _draw_piece(game_track_texture, (ac + bc) * 0.5, Vector2(delta.length() * 1.18, cell_size * 0.48), delta.angle(), Color(1, 1, 1, 0.24)):
-				draw_line(ac, bc, Color(0.4, 0.5, 0.45, 0.24), max(8.0, cell_size * 0.16), true)
-	for p in ghost:
-		if not tracks.has(p):
-			var c := _grid_to_screen(p)
-			draw_circle(c, max(5.0, cell_size * 0.1), Color(0.4, 0.5, 0.45, 0.34))
+func _draw_terrain() -> void:
+	var scenario: Dictionary = local.get("scenario", {})
+	for item in scenario.get("terrain", []):
+		var p: Vector2i = item.get("pos", Vector2i(-999, -999))
+		if not _is_in_grid(p):
+			continue
+		var terrain_type := String(item.get("type", ""))
+		var center := _grid_to_screen(p)
+		var rect := Rect2(center - Vector2(cell_size * 0.5, cell_size * 0.5), Vector2(cell_size, cell_size)).grow(-2.0)
+		var fill := Color(0.44, 0.53, 0.48, 0.56)
+		if terrain_type == "mountain":
+			fill = Color(0.52, 0.55, 0.58, 0.72)
+		elif terrain_type == "rock":
+			fill = Color(0.43, 0.38, 0.34, 0.68)
+		elif terrain_type == "river":
+			fill = Color(0.30, 0.61, 0.86, 0.62)
+		elif terrain_type == "ocean":
+			fill = Color(0.14, 0.42, 0.68, 0.72)
+		draw_rect(rect, fill)
+		if terrain_type == "mountain":
+			draw_polygon([
+				center + Vector2(-cell_size * 0.36, cell_size * 0.24),
+				center + Vector2(0.0, -cell_size * 0.32),
+				center + Vector2(cell_size * 0.36, cell_size * 0.24)
+			], [Color(0.88, 0.9, 0.86, 0.84)])
+		elif terrain_type == "river":
+			draw_line(center + Vector2(-cell_size * 0.36, 0.0), center + Vector2(cell_size * 0.36, 0.0), Color(0.9, 0.98, 1.0, 0.82), max(3.0, cell_size * 0.06), true)
+		elif terrain_type == "rock":
+			draw_circle(center, cell_size * 0.19, Color(0.21, 0.18, 0.16, 0.72))
+		elif terrain_type == "ocean":
+			draw_line(center + Vector2(-cell_size * 0.3, -cell_size * 0.08), center + Vector2(cell_size * 0.3, -cell_size * 0.08), Color(0.86, 0.95, 1.0, 0.68), max(2.0, cell_size * 0.04), true)
 
 func _draw_track_drag_preview() -> void:
 	if not dragging or selected_tool not in ["track", "erase"]:
@@ -3211,12 +4095,59 @@ func _draw_stations() -> void:
 			draw_rect(Rect2(c - Vector2(cell_size * 0.58, cell_size * 0.42), Vector2(cell_size * 1.16, cell_size * 0.84)), Color.html("#2f3840"), false, 2)
 		var label_size := int(max(14.0, cell_size * 0.24))
 		_draw_map_label(c + Vector2(-cell_size * 1.04, cell_size * 0.7), String(st["name"]), cell_size * 2.08, label_size)
+		_draw_station_resource_badges(st, c)
 		if selected_tool == "train" and st.get("role", "") == "source":
 			_draw_map_label(c + Vector2(-cell_size * 0.9, -cell_size * 1.04), "BUY HERE", cell_size * 1.8, int(max(13.0, cell_size * 0.22)), Color.html("#ffe06d"))
 		if int(st.get("platforms", 1)) > 1:
-			_draw_map_label(c + Vector2(-cell_size * 0.45, -cell_size * 0.7), "P%d" % int(st["platforms"]), cell_size * 0.9, label_size)
+			_draw_map_label(c + Vector2(-cell_size * 0.45, -cell_size * 0.94), "P%d" % int(st["platforms"]), cell_size * 0.9, label_size)
 		if editing_line_stops and selected_line_id != "" and lines.has(selected_line_id):
 			_draw_station_add_handle(st["pos"])
+
+func _draw_station_resource_badges(st: Dictionary, center: Vector2) -> void:
+	var out_text := _station_output_badge_text(st)
+	var need_text := _station_need_badge_text(st)
+	if out_text != "":
+		var cargo := String(st.get("produces", ""))
+		_draw_station_resource_badge(center + Vector2(-cell_size * 1.42, -cell_size * 0.58), out_text, _resource_color(cargo), false)
+	if need_text != "":
+		var accepts: Array = st.get("accepts", [])
+		var cargo := String(accepts[0]) if not accepts.is_empty() else ""
+		_draw_station_resource_badge(center + Vector2(cell_size * 0.52, -cell_size * 0.58), need_text, _resource_color(cargo), true)
+
+func _draw_station_resource_badge(pos: Vector2, text: String, fill: Color, outlined: bool) -> void:
+	var badge_size := Vector2(max(88.0, cell_size * 1.72), max(22.0, cell_size * 0.36))
+	var rect := Rect2(pos, badge_size)
+	draw_rect(rect.grow(2.0), Color(0.04, 0.08, 0.1, 0.78))
+	draw_rect(rect, fill)
+	if outlined:
+		draw_rect(rect.grow(-3.0), Color(1, 1, 1, 0.0), false, 2.0)
+	draw_rect(rect, Color.html("#172028"), false, 1.5)
+	draw_string(font, rect.position + Vector2(0, badge_size.y - 6.0), text, HORIZONTAL_ALIGNMENT_CENTER, badge_size.x, int(max(10.0, cell_size * 0.18)), Color.html("#172028"))
+
+func _station_output_badge_text(st: Dictionary) -> String:
+	var produced := String(st.get("produces", ""))
+	if produced == "":
+		return ""
+	var amount := _station_available_amount(st, produced)
+	if amount >= 0:
+		return "OUT %s %d" % [_resource_name(produced), amount]
+	return "OUT %s" % _resource_name(produced)
+
+func _station_need_badge_text(st: Dictionary) -> String:
+	var accepts: Array = st.get("accepts", [])
+	if accepts.is_empty():
+		return ""
+	var names: Array[String] = []
+	for cargo in accepts:
+		names.append(_resource_name(String(cargo)))
+	return "NEEDS %s" % "/".join(names)
+
+func _station_available_amount(st: Dictionary, cargo: String) -> int:
+	if st.get("role", "") == "source" and st.has("stored"):
+		return int(st.get("stored", 0))
+	if String(st.get("id", "")) == "steelworks" and cargo == "steel":
+		return int(local.get("steel_buffer", 0))
+	return -1
 
 func _draw_station_add_handle(station_pos: Vector2i) -> void:
 	var center: Vector2 = _station_add_handle_center(station_pos)

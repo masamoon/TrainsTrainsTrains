@@ -13,7 +13,10 @@ func _initialize() -> void:
 
 	_run_coal_smoke(main)
 	_run_layout_smoke(main)
+	_run_context_menu_smoke(main)
+	_run_productive_output_smoke(main)
 	_run_debug_money_smoke(main)
+	_run_money_only_build_smoke(main)
 	_run_diagonal_track_smoke(main)
 	_run_signal_rotation_smoke(main)
 	_run_signal_click_cycle_smoke(main)
@@ -25,13 +28,19 @@ func _initialize() -> void:
 	_run_block_occupant_smoke(main)
 	_run_train_next_leg_smoke(main)
 	_run_idle_train_blocker_reason_smoke(main)
+	_run_train_card_issue_smoke(main)
 	_run_yard_route_return_smoke(main)
 	_run_target_progress_path_smoke(main)
 	_run_paired_chain_signal_smoke(main)
 	_run_dispatcher_assignment_smoke(main)
 	_run_depot_dispatch_smoke(main)
+	_run_multiple_lines_one_source_smoke(main)
 	_run_restart_preserves_fleet_smoke(main)
-	_run_planning_guide_smoke(main)
+	_run_station_resource_badge_smoke(main)
+	_run_generated_pool_smoke(main)
+	_run_generated_contract_play_smoke(main)
+	_run_run_progression_smoke(main)
+	_run_reset_progress_smoke(main)
 	_run_signal_siding_smoke(main)
 	_run_advanced_yard_smoke(main)
 	_run_overtake_pass_smoke(main)
@@ -63,22 +72,86 @@ func _run_layout_smoke(main: Node) -> void:
 	var board_size := Vector2(float(grid.x) * main.cell_size, float(grid.y) * main.cell_size)
 	_require(main.cell_size >= 46.0, "Expanded local maps should keep cells at the readable minimum at 1280x720.")
 	_require(board_size.x >= 820.0, "Expanded local map should give passing infrastructure more horizontal room at 1280x720.")
-	_require(board_size.y >= 500.0, "Expanded local map should give passing infrastructure more vertical room at 1280x720.")
-	_require(main._local_side_panel_width() <= 400.0, "Default side panel should leave room for the expanded board at 1280px.")
-	var dispatcher_min_width: float = main.dispatch_line_box.custom_minimum_size.x + main.dispatch_train_box.custom_minimum_size.x + 8.0
-	_require(dispatcher_min_width <= main._local_side_panel_inner_width(), "Dispatcher columns should fit inside the side panel at 1280px.")
+	_require(board_size.y >= 560.0, "Map-first local UI should give the board most of the vertical screen at 1280x720.")
+	_require(main.side_panel == null and main.dispatch_line_box == null and main.dispatch_train_box == null and main.dispatch_preview == null, "Local play should not create persistent management panels.")
+	_require(main.tool_bar == null, "Local play should not create a persistent tool bar.")
 	main.size = Vector2(2048, 1024)
 	main._update_board_layout()
-	_require(main._local_side_panel_width() >= 520.0, "Wide screens should use a wider side panel.")
-	_require(dispatcher_min_width <= main._local_side_panel_inner_width(), "Dispatcher columns should fit inside the side panel at 2048px.")
-	var panel_right_edge: float = main.size.x + main.side_panel.offset_right
-	_require(panel_right_edge <= main.size.x, "Side panel should stay inside the right edge of the window.")
+	_require(main.side_panel == null and main.tool_bar == null, "Wide local play should remain map-first without panels.")
+	main.size = Vector2(640, 480)
+	main.start_scenario("coal_valley")
+	_require(_control_inside_viewport(main.hud_bar, main.size), "Compact local HUD controls should stay inside a mobile-sized viewport.")
+	_require(main.hud_bar.get_child_count() >= 4, "Compact local HUD should expose pause, speed, train reset, and region controls.")
+
+func _run_context_menu_smoke(main: Node) -> void:
+	main.start_scenario("coal_valley")
+	main.local["money"] = 5000
+	var station_screen: Vector2 = main._grid_to_screen(Vector2i(1, 5))
+	main.press_active = true
+	main.press_start_pos = station_screen
+	main.press_start_cell = Vector2i(1, 5)
+	main._process(0.5)
+	_require(main.context_menu_open, "Long-pressing a station should open contextual actions.")
+	_require(main.context_menu_layer.get_child_count() >= 3, "Station radial menu should expose service/train/platform actions.")
+	main._close_context_menu()
+	main._context_create_service("coal_mine")
+	_require(main.editing_line_stops and main.service_edit_bar.visible, "Creating a service from a station should enter compact service-edit mode.")
+	main._handle_local_click(main._station_add_handle_center(Vector2i(1, 5)))
+	main._handle_local_click(main._station_add_handle_center(Vector2i(16, 5)))
+	_require((main.lines[main.selected_line_id]["route"] as Array).size() == 2, "Service-edit mode should add stops by tapping station plus handles.")
+	main._complete_service_edit()
+	_require(not main.editing_line_stops and not main.service_edit_bar.visible, "Completing service edit should hide the floating edit chip.")
+	_place_path(main, [Vector2i(1, 5), Vector2i(16, 5)])
+	main._open_context_menu_at(main._grid_to_screen(Vector2i(5, 5)), "track", "", Vector2i(5, 5))
+	_require(main.context_menu_open and main.context_menu_layer.get_child_count() >= 3, "Holding track should expose signal and erase actions.")
+	main._close_context_menu()
+	main._place_signal(Vector2i(5, 5), "block")
+	main._handle_local_click(main._grid_to_screen(Vector2i(5, 5)))
+	_require(main._signal_dirs(Vector2i(5, 5)).size() == 2, "Tapping an existing signal should pair it without opening a menu.")
+	main._handle_local_click(main._grid_to_screen(Vector2i(5, 5)))
+	_require(main._signal_dirs(Vector2i(5, 5)).size() == 1, "Tapping a paired signal should return it to single.")
+	main._open_context_menu_at(main._grid_to_screen(Vector2i(5, 5)), "signal", "", Vector2i(5, 5))
+	_require(main.context_menu_open and main.context_menu_layer.get_child_count() >= 3, "Holding a signal should expose rotate, pair, and erase actions.")
+	main._close_context_menu()
+	main._buy_available_train()
+	main._context_assign_train(String(main.trains[0]["id"]))
+	_require(String(main.trains[0].get("line_id", "")) == main.selected_line_id, "Train should be assignable through object-first context actions.")
+	var overlap_target: Dictionary = main._context_target_at(station_screen)
+	_require(String(overlap_target.get("type", "")) == "station", "Station context actions should remain reachable when a train overlaps the station.")
+	main.selected_train_id = String(main.trains[0]["id"])
+	main._handle_local_click(station_screen)
+	_require(main.selected_train_id == "", "Tapping an occupied station should inspect the station instead of selecting the overlapping train.")
+
+func _run_productive_output_smoke(main: Node) -> void:
+	main.start_scenario("coal_valley")
+	main.local["fleet_goal"] = 4
+	main.local["target"] = 12
+	main._record_productive_output(12)
+	_require(int(main.local.get("productive_progress", 0)) == 12, "Productive output should count delivered cargo even before the fleet objective is met.")
+	_require(not main._objective_complete(), "Fleet target should remain a separate completion requirement.")
 
 func _run_debug_money_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")
 	var before: int = int(main.local["money"])
 	main._debug_replenish_money()
 	_require(int(main.local["money"]) == before + 5000, "Debug money button should add $5000 to the local budget.")
+
+func _run_money_only_build_smoke(main: Node) -> void:
+	main.start_scenario("coal_valley")
+	main.local["money"] = 1000
+	main.local["materials"] = 0
+	_place_path(main, [Vector2i(1, 5), Vector2i(16, 5)])
+	var before_chain_money: int = int(main.local["money"])
+	main._place_signal(Vector2i(5, 5), "chain")
+	_require(main.signals.has(Vector2i(5, 5)), "Chain signals should place with money only when materials are zero.")
+	_require(int(main.local["money"]) == before_chain_money - 120, "Chain signal should spend only money.")
+	_require(int(main.local["materials"]) == 0, "Chain signal should not spend materials.")
+	var before_platform_money: int = int(main.local["money"])
+	var platform_before: int = int(main.station_by_id["interchange"].get("platforms", 1))
+	main._add_platform()
+	_require(int(main.station_by_id["interchange"].get("platforms", 1)) == platform_before + 1, "Platforms should build with money only when materials are zero.")
+	_require(int(main.local["money"]) == before_platform_money - 200, "Platform should spend only money.")
+	_require(int(main.local["materials"]) == 0, "Platform should not spend materials.")
 
 func _run_diagonal_track_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")
@@ -269,6 +342,17 @@ func _run_idle_train_blocker_reason_smoke(main: Node) -> void:
 	var reason: String = main._display_reason_for_train(main.trains[0])
 	_require(reason.contains("Next signal section is occupied by T02"), "Idle train inspector should explain the next occupied signal section before the train state mutates.")
 
+func _run_train_card_issue_smoke(main: Node) -> void:
+	var t := {
+		"state": "NoRoute",
+		"wait_reason": "Signal only opens west / left, but this train needs east / right.",
+		"route": ["west_line", "central_yard"],
+		"line_id": "line_west_line"
+	}
+	var label: String = main._train_card_issue_label(t)
+	_require(label.contains("Why:"), "Train cards should include a reason line for NoRoute trains.")
+	_require(label.contains("Signal only opens"), "Train card reason should show the route failure cause.")
+
 func _run_yard_route_return_smoke(main: Node) -> void:
 	main.start_scenario("steelworks")
 	_place_path(main, [Vector2i(1, 4), Vector2i(2, 5), Vector2i(9, 5), Vector2i(16, 5)])
@@ -339,6 +423,24 @@ func _run_depot_dispatch_smoke(main: Node) -> void:
 	_require(queued == 1, "Extra trains should wait off-map in depot instead of stacking in the yard.")
 	_require(main._block_occupied_by_other(-1, "") == "", "Off-map depot trains should not occupy signal blocks.")
 
+func _run_multiple_lines_one_source_smoke(main: Node) -> void:
+	main.start_scenario("coal_valley")
+	main.local["money"] = 5000
+	_place_path(main, [Vector2i(1, 5), Vector2i(16, 5)])
+	var first_line: String = main._create_or_get_line_for_source("coal_mine")
+	var second_line: String = main._create_new_line_for_source("coal_mine")
+	_require(first_line != second_line, "A source should be able to create more than one independent line.")
+	_require(main.lines.has(first_line) and main.lines.has(second_line), "Both source lines should exist in the dispatcher.")
+	_require(String(main.lines[first_line].get("source_id", "")) == "coal_mine", "First line should remember its source station.")
+	_require(String(main.lines[second_line].get("source_id", "")) == "coal_mine", "Second line should remember its source station.")
+	main.lines[second_line]["route"] = ["coal_mine", "interchange"]
+	main.lines[second_line]["name"] = main._line_name_for_route(main.lines[second_line]["route"], int(main.lines[second_line].get("ordinal", 1)))
+	_require((main.lines[first_line]["route"] as Array).size() == 2, "Editing one line should not mutate the other line's route.")
+	main._buy_train_for_line(first_line)
+	main._buy_train_for_line(second_line)
+	_require(main.trains.size() == 2, "One source should support trains assigned to separate lines.")
+	_require(String(main.trains[0].get("line_id", "")) != String(main.trains[1].get("line_id", "")), "Trains should keep their separate line assignments.")
+
 func _run_restart_preserves_fleet_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")
 	main.local["money"] = 5000
@@ -359,13 +461,134 @@ func _run_restart_preserves_fleet_smoke(main: Node) -> void:
 	_require(main.trains.size() == 2, "Restart Trains should not remove trains from the fleet.")
 	_require(main._tile_train_count(Vector2i(1, 5)) == 1, "Restart Trains should visibly stage one assigned train at the line start when the platform is free.")
 
-func _run_planning_guide_smoke(main: Node) -> void:
-	main.start_scenario("central_yard")
-	_require(not main.planning_guide_open, "Planning guide should be hidden by default so scenarios do not present an answer stencil.")
-	main._toggle_planning_guide()
-	_require(main.planning_guide_open, "Planning guide toggle should show the optional example layout.")
-	main._toggle_planning_guide()
-	_require(not main.planning_guide_open, "Planning guide toggle should hide the optional example layout.")
+func _run_station_resource_badge_smoke(main: Node) -> void:
+	main.start_scenario("coal_valley")
+	_require(main._station_output_badge_text(main.station_by_id["coal_mine"]) == "OUT COAL 240", "Source station badge should show available produced coal at a glance.")
+	_require(main._station_need_badge_text(main.station_by_id["interchange"]) == "NEEDS COAL", "Sink station badge should show required coal at a glance.")
+	main.start_scenario("run_06")
+	_require(main._station_output_badge_text(main.station_by_id["coal_input"]) == "OUT COAL 240", "Steel input should show available coal.")
+	_require(main._station_need_badge_text(main.station_by_id["steelworks"]) == "NEEDS COAL", "Processor badge should show required input cargo.")
+	_require(main._station_output_badge_text(main.station_by_id["steelworks"]) == "OUT STEEL 0", "Processor badge should show available output buffer.")
+	_require(main._station_need_badge_text(main.station_by_id["export_platform"]) == "NEEDS STEEL", "Export station badge should show required steel.")
+
+func _run_generated_pool_smoke(main: Node) -> void:
+	_reset_run_state(main)
+	var run_count := 0
+	var terrain_count := 0
+	var hard_count := 0
+	var branch_contract_count := 0
+	for s in main.scenarios:
+		if String(s.get("id", "")).begins_with(main.RUN_SCENARIO_PREFIX):
+			run_count += 1
+			if not (s.get("terrain", []) as Array).is_empty():
+				terrain_count += 1
+			if int(s.get("difficulty", 1)) >= 3:
+				hard_count += 1
+			if _route_has_branching_obligation(s):
+				branch_contract_count += 1
+			_require(_ghost_avoids_blocking_terrain(s), "%s solution path should avoid mountains, rocks, and ocean." % s.get("name", s.get("id", "")))
+			_require(_ghost_visits_required_stations(s), "%s solution path should connect its required stations." % s.get("name", s.get("id", "")))
+			_require(_route_has_branching_obligation(s), "%s should require an off-axis route stop so a simple A-B double track is not sufficient." % s.get("name", s.get("id", "")))
+	_require(run_count == main.RUN_POOL_SIZE, "Roguelike pool should generate exactly 30 map contracts.")
+	_require(terrain_count >= 24, "Generated contracts should usually contain terrain constraints.")
+	_require(hard_count >= 10, "Generated pool should include a late-run hard difficulty band.")
+	_require(branch_contract_count == run_count, "Every generated contract should have a branching or loop obligation beyond A-to-B.")
+	_require((main.campaign["run_available"] as Array).size() == main.RUN_CHOICES, "A fresh run should offer three contract choices.")
+	var first_id: String = String((main.campaign["run_available"] as Array)[0])
+	main.start_scenario(first_id)
+	var blocked_tile := Vector2i(-999, -999)
+	for item in main.local["scenario"].get("terrain", []):
+		if String(item.get("type", "")) in ["mountain", "rock", "ocean"]:
+			blocked_tile = item["pos"]
+			break
+	if blocked_tile.x > -900:
+		main._place_track(blocked_tile)
+		_require(not main.tracks.has(blocked_tile), "Mountains, rocks, and ocean should block new player track.")
+	var river_tile := Vector2i(-999, -999)
+	for item in main.local["scenario"].get("terrain", []):
+		if String(item.get("type", "")) == "river":
+			river_tile = item["pos"]
+			break
+	if river_tile.x > -900:
+		main.local["money"] = 1000
+		var money_before: int = int(main.local["money"])
+		main._place_track(river_tile)
+		_require(main.tracks.has(river_tile), "River tiles should allow bridge track.")
+		_require(int(main.local["money"]) == money_before - 85, "River bridge track should cost $85.")
+
+func _run_generated_contract_play_smoke(main: Node) -> void:
+	for id in ["run_01", "run_02", "run_03", "run_04", "run_05", "run_06"]:
+		_reset_run_state(main)
+		main.start_scenario(id)
+		main.local["money"] = 9000
+		main.local["fleet_goal"] = 1
+		if main.local.get("kind", "") == "yard":
+			main.local["target"] = 1
+		elif main.local.get("kind", "") == "steel":
+			main.local["target"] = 20
+		else:
+			main.local["target"] = 40
+		_build_ghost_solution(main)
+		main._compute_blocks()
+		var source_id := String(main.local["scenario"]["route"][0])
+		main._buy_train_for_source(source_id)
+		for i in range(1600):
+			if main.screen != main.Screen.LOCAL:
+				break
+			_step_fast(main, 0.1)
+		var train_state := "none"
+		var train_reason := "none"
+		if not main.trains.is_empty():
+			train_state = String(main.trains[0].get("state", ""))
+			train_reason = String(main.trains[0].get("wait_reason", ""))
+		_require(main.screen == main.Screen.RESULTS, "%s should be completable through actual train movement. State: %s Reason: %s Progress: %d/%d" % [id, train_state, train_reason, main._completion_progress(), int(main.local.get("target", 0))])
+		_require((main.campaign["run_completed"] as Array).has(id), "Completing %s through play should record run completion." % id)
+
+func _run_run_progression_smoke(main: Node) -> void:
+	_reset_run_state(main)
+	var guard := 0
+	while int(main.campaign.get("run_step", 0)) < main.RUN_LENGTH and guard < 30:
+		var choices: Array = main.campaign.get("run_available", [])
+		_require(not choices.is_empty(), "Run should keep offering contracts until 20 maps are complete.")
+		var id := String(choices[0])
+		main.start_scenario(id)
+		_force_complete_current_contract(main)
+		guard += 1
+	_require(int(main.campaign.get("run_step", 0)) == main.RUN_LENGTH, "Run progression should reach 20 completed maps.")
+	_require(bool(main.campaign.get("run_won", false)), "Run should mark itself won after 20 completed maps.")
+	_require((main.campaign.get("run_history", []) as Array).size() == main.RUN_LENGTH, "Run history should record all 20 completed maps.")
+	var traits: Dictionary = main.campaign.get("regional_traits", {})
+	_require(int(traits.get("through_traffic", 0)) > 0, "Completed run maps should add through-traffic pressure.")
+	_require(float(traits.get("reliability", 0.0)) > 0.0, "Completed run maps should store reliability for later node interaction.")
+
+func _run_reset_progress_smoke(main: Node) -> void:
+	main.campaign["completed"] = ["coal_valley", "run_01"]
+	main.campaign["run_completed"] = ["run_01", "run_02"]
+	main.campaign["run_step"] = 2
+	main.campaign["run_history"] = [{"id": "run_01"}, {"id": "run_02"}]
+	main.campaign["run_won"] = true
+	main.campaign["money"] = 9999
+	main.campaign["traffic_load"] = 99
+	main.campaign["traffic_capacity"] = 12
+	main.campaign["regional_traits"] = {
+		"coal_output": 100,
+		"freight_output": 200,
+		"steel_output": 300,
+		"reliability": 0.4,
+		"capacity_rating": 5,
+		"through_traffic": 9,
+		"burstiness": 1.2
+	}
+	main._reset_progress(false)
+	_require(int(main.campaign["money"]) == 1500, "Reset Progress should restore starting money.")
+	_require(int(main.campaign["traffic_load"]) == 18 and int(main.campaign["traffic_capacity"]) == 40, "Reset Progress should restore regional traffic defaults.")
+	_require((main.campaign["completed"] as Array).is_empty(), "Reset Progress should clear completed tutorial/run IDs.")
+	_require((main.campaign["run_completed"] as Array).is_empty(), "Reset Progress should clear run completions.")
+	_require((main.campaign["run_history"] as Array).is_empty(), "Reset Progress should clear run history.")
+	_require(int(main.campaign["run_step"]) == 0 and not bool(main.campaign["run_won"]), "Reset Progress should return the run to 0/20 and not won.")
+	_require((main.campaign["run_available"] as Array).size() == main.RUN_CHOICES, "Reset Progress should generate fresh contract choices.")
+	var traits: Dictionary = main.campaign["regional_traits"]
+	_require(int(traits.get("through_traffic", -1)) == 0 and float(traits.get("reliability", 0.0)) == 1.0, "Reset Progress should restore inherited regional traits.")
 
 func _run_signal_siding_smoke(main: Node) -> void:
 	main.start_scenario("central_yard")
@@ -511,6 +734,94 @@ func _run_line_density_smoke(main: Node) -> void:
 	_require(main._average_wait() < 12.0, "Density smoke should keep a high-throughput line moving.")
 	_require(int(main.local.get("deadlocks", 0)) == 0, "Density smoke should not deadlock a properly signaled line.")
 
+func _reset_run_state(main: Node) -> void:
+	main.campaign["money"] = 1500
+	main.campaign["materials"] = 4
+	main.campaign["traffic_load"] = 18
+	main.campaign["traffic_capacity"] = 40
+	main.campaign["completed"] = []
+	main.campaign["run_seed"] = 32027
+	main.campaign["run_step"] = 0
+	main.campaign["run_completed"] = []
+	main.campaign["run_available"] = []
+	main.campaign["run_history"] = []
+	main.campaign["run_won"] = false
+	main.campaign["regional_traits"] = {
+		"coal_output": 0,
+		"freight_output": 0,
+		"steel_output": 0,
+		"reliability": 1.0,
+		"capacity_rating": 0,
+		"through_traffic": 0,
+		"burstiness": 0.0
+	}
+	main._ensure_run_state()
+
+func _force_complete_current_contract(main: Node) -> void:
+	main.local["delivered"] = int(main.local.get("target", 0))
+	main.local["processed"] = int(main.local.get("target", 0))
+	main.local["productive_progress"] = int(main.local.get("target", 0))
+	main.local["deadlocks"] = 0
+	main.local["max_queue"] = 0
+	main._complete_scenario()
+	_require(main.screen == main.Screen.RESULTS, "Forced run contract should still use the normal results screen.")
+	main._return_to_region()
+
+func _ghost_avoids_blocking_terrain(scenario: Dictionary) -> bool:
+	var ghost: Array = scenario.get("ghost", [])
+	for p in ghost:
+		for item in scenario.get("terrain", []):
+			if item.get("pos", Vector2i(-999, -999)) == p and String(item.get("type", "")) in ["mountain", "rock", "ocean"]:
+				var is_station := false
+				for st in scenario.get("stations", []):
+					if st.get("pos", Vector2i(-999, -999)) == p:
+						is_station = true
+						break
+				if not is_station:
+					return false
+	return true
+
+func _ghost_visits_required_stations(scenario: Dictionary) -> bool:
+	var ghost: Array = scenario.get("ghost", [])
+	for st in scenario.get("stations", []):
+		if not _point_array_has(ghost, st.get("pos", Vector2i(-999, -999))):
+			return false
+	return true
+
+func _route_has_branching_obligation(scenario: Dictionary) -> bool:
+	var route: Array = scenario.get("route", [])
+	if route.size() < 3:
+		return false
+	var by_id := {}
+	for st in scenario.get("stations", []):
+		by_id[String(st.get("id", ""))] = st
+	if not by_id.has(String(route[0])):
+		return false
+	var base_y: int = int(by_id[String(route[0])].get("pos", Vector2i(-999, -999)).y)
+	var unique_positions: Array[Vector2i] = []
+	var off_axis := false
+	for station_id in route:
+		var key := String(station_id)
+		if not by_id.has(key):
+			return false
+		var p: Vector2i = by_id[key].get("pos", Vector2i(-999, -999))
+		if not unique_positions.has(p):
+			unique_positions.append(p)
+		if abs(p.y - base_y) >= 2:
+			off_axis = true
+	return unique_positions.size() >= 3 and off_axis
+
+func _point_array_has(points: Array, target: Vector2i) -> bool:
+	for p in points:
+		if p == target:
+			return true
+	return false
+
+func _build_ghost_solution(main: Node) -> void:
+	var ghost: Array = main.local["scenario"].get("ghost", [])
+	for i in range(ghost.size() - 1):
+		main._place_track_path(ghost[i], ghost[i + 1])
+
 func _place_path(main: Node, points: Array) -> void:
 	for i in range(points.size() - 1):
 		var a: Vector2i = points[i]
@@ -534,6 +845,12 @@ func _step_fast(main: Node, delta: float) -> void:
 	main._detect_congestion(delta)
 	if main._objective_complete():
 		main._complete_scenario()
+
+func _control_inside_viewport(control: Control, viewport_size: Vector2) -> bool:
+	if control == null:
+		return false
+	var rect := control.get_global_rect()
+	return rect.position.x >= -0.5 and rect.position.y >= -0.5 and rect.end.x <= viewport_size.x + 0.5 and rect.end.y <= viewport_size.y + 0.5
 
 func _require(condition: bool, message: String) -> void:
 	if not condition:

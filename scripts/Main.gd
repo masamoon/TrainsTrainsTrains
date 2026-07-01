@@ -9,6 +9,10 @@ const RUN_LENGTH := 20
 const RUN_POOL_SIZE := 30
 const RUN_CHOICES := 3
 const RUN_SCENARIO_PREFIX := "run_"
+const REGIONAL_GRID := Vector2i(9, 7)
+const REGIONAL_START_KEY := "0,3"
+const REGIONAL_TILE_SIZE := 64.0
+const REGIONAL_TILE_TERRAINS := ["plains", "forest", "hills", "mountains", "river", "coast", "city", "industry"]
 const DIRS: Array[Vector2i] = [
 	Vector2i.UP,
 	Vector2i(1, -1),
@@ -34,6 +38,15 @@ var campaign := {
 	"run_available": [],
 	"run_history": [],
 	"run_won": false,
+	"regional_map_seed": 32027,
+	"regional_map": [],
+	"regional_position": REGIONAL_START_KEY,
+	"regional_completed_tiles": [],
+	"regional_visible_tiles": [],
+	"active_regional_tile": "",
+	"permanent_upgrades": {},
+	"run_upgrades": {},
+	"upgrade_shop": [],
 	"regional_traits": {
 		"coal_output": 0,
 		"freight_output": 0,
@@ -58,6 +71,7 @@ var game_station_texture: Texture2D
 var game_steelworks_texture: Texture2D
 var game_signal_texture: Texture2D
 var game_regional_node_texture: Texture2D
+var regional_tileset_texture: Texture2D
 var font: Font
 var font_size := 15
 var hud_bar: HBoxContainer
@@ -145,14 +159,17 @@ func _load_ui_skin() -> void:
 	game_steelworks_texture = _load_texture("res://assets/generated/game/steelworks.png")
 	game_signal_texture = _load_texture("res://assets/generated/game/signal.png")
 	game_regional_node_texture = _load_texture("res://assets/generated/game/regional_node.png")
+	regional_tileset_texture = _load_texture("res://assets/generated/regional/tileset.png")
 
 func _load_texture(path: String) -> Texture2D:
-	var texture: Texture2D = load(path)
-	if texture:
-		return texture
-	var image := Image.load_from_file(path)
-	if image:
-		return ImageTexture.create_from_image(image)
+	if ResourceLoader.exists(path):
+		var texture: Texture2D = load(path)
+		if texture:
+			return texture
+	if FileAccess.file_exists(path):
+		var image := Image.load_from_file(path)
+		if image:
+			return ImageTexture.create_from_image(image)
 	return null
 
 func _texture_style(texture: Texture2D, margins: Vector4, content: Vector4 = Vector4(18, 10, 18, 10)) -> StyleBoxTexture:
@@ -721,6 +738,26 @@ func _ensure_run_state() -> void:
 		campaign["run_step"] = (campaign["run_completed"] as Array).size()
 	if not campaign.has("run_won"):
 		campaign["run_won"] = false
+	if not campaign.has("regional_map_seed"):
+		campaign["regional_map_seed"] = int(campaign.get("run_seed", 32027))
+	if not campaign.has("regional_map") or typeof(campaign["regional_map"]) != TYPE_ARRAY or (campaign["regional_map"] as Array).is_empty():
+		campaign["regional_map"] = _generate_regional_map(int(campaign.get("regional_map_seed", 32027)))
+	if not campaign.has("regional_position") or String(campaign["regional_position"]) == "":
+		campaign["regional_position"] = REGIONAL_START_KEY
+	if not campaign.has("regional_completed_tiles") or typeof(campaign["regional_completed_tiles"]) != TYPE_ARRAY:
+		campaign["regional_completed_tiles"] = []
+	if not (campaign["regional_completed_tiles"] as Array).has(REGIONAL_START_KEY):
+		(campaign["regional_completed_tiles"] as Array).append(REGIONAL_START_KEY)
+	if not campaign.has("regional_visible_tiles") or typeof(campaign["regional_visible_tiles"]) != TYPE_ARRAY or (campaign["regional_visible_tiles"] as Array).is_empty():
+		campaign["regional_visible_tiles"] = _regional_neighbors(REGIONAL_START_KEY)
+	if not campaign.has("active_regional_tile"):
+		campaign["active_regional_tile"] = ""
+	if not campaign.has("permanent_upgrades") or typeof(campaign["permanent_upgrades"]) != TYPE_DICTIONARY:
+		campaign["permanent_upgrades"] = {}
+	if not campaign.has("run_upgrades") or typeof(campaign["run_upgrades"]) != TYPE_DICTIONARY:
+		campaign["run_upgrades"] = {}
+	if not campaign.has("upgrade_shop") or typeof(campaign["upgrade_shop"]) != TYPE_ARRAY:
+		campaign["upgrade_shop"] = []
 	if not campaign.has("regional_traits") or typeof(campaign["regional_traits"]) != TYPE_DICTIONARY:
 		campaign["regional_traits"] = {}
 	var traits: Dictionary = campaign["regional_traits"]
@@ -733,6 +770,8 @@ func _ensure_run_state() -> void:
 		traits["burstiness"] = 0.0
 	campaign["run_step"] = min(RUN_LENGTH, (campaign["run_completed"] as Array).size())
 	campaign["run_won"] = int(campaign["run_step"]) >= RUN_LENGTH
+	if (campaign["upgrade_shop"] as Array).is_empty():
+		_generate_upgrade_shop()
 	_ensure_run_choices()
 
 func _default_regional_traits() -> Dictionary:
@@ -753,6 +792,15 @@ func _reset_progress(save_to_disk: bool = true) -> void:
 	campaign["traffic_capacity"] = 40
 	campaign["completed"] = []
 	campaign["run_seed"] = 32027
+	campaign["regional_map_seed"] = 32027
+	campaign["regional_map"] = []
+	campaign["regional_position"] = REGIONAL_START_KEY
+	campaign["regional_completed_tiles"] = []
+	campaign["regional_visible_tiles"] = []
+	campaign["active_regional_tile"] = ""
+	campaign["permanent_upgrades"] = {}
+	campaign["run_upgrades"] = {}
+	campaign["upgrade_shop"] = []
 	campaign["run_step"] = 0
 	campaign["run_completed"] = []
 	campaign["run_available"] = []
@@ -770,25 +818,203 @@ func _ensure_run_choices() -> void:
 	if bool(campaign.get("run_won", false)):
 		campaign["run_available"] = []
 		return
-	var valid_choices: Array = []
-	for id in campaign.get("run_available", []):
-		if _is_run_scenario_id(String(id)) and not _run_completed_has(String(id)):
-			valid_choices.append(String(id))
-	if valid_choices.size() >= min(RUN_CHOICES, _remaining_run_scenario_count()):
-		campaign["run_available"] = valid_choices.slice(0, RUN_CHOICES)
-		return
-	var choices := valid_choices
-	var completed: Array = campaign.get("run_completed", [])
-	var step := int(campaign.get("run_step", completed.size()))
-	var seed := int(campaign.get("run_seed", 32027))
-	var offset := 0
-	while choices.size() < RUN_CHOICES and offset < RUN_POOL_SIZE * 2:
-		var index := (seed + step * 7 + offset * 11) % RUN_POOL_SIZE
-		var id := "%s%02d" % [RUN_SCENARIO_PREFIX, index + 1]
-		if not completed.has(id) and not choices.has(id):
+	if not campaign.has("regional_map") or (campaign.get("regional_map", []) as Array).is_empty():
+		campaign["regional_map"] = _generate_regional_map(int(campaign.get("regional_map_seed", 32027)))
+	var choices: Array = []
+	for key in _regional_available_tile_keys():
+		var tile := _regional_tile_for_key(String(key))
+		var id := String(tile.get("scenario_id", ""))
+		if id != "" and not choices.has(id):
 			choices.append(id)
-		offset += 1
+	if choices.is_empty() and int(campaign.get("run_step", 0)) < RUN_LENGTH:
+		var fallback_key := _nearest_uncompleted_regional_contract()
+		if fallback_key != "":
+			var visible: Array = campaign.get("regional_visible_tiles", [])
+			if not visible.has(fallback_key):
+				visible.append(fallback_key)
+			campaign["regional_visible_tiles"] = visible
+			var fallback_tile := _regional_tile_for_key(fallback_key)
+			var fallback_id := String(fallback_tile.get("scenario_id", ""))
+			if fallback_id != "":
+				choices.append(fallback_id)
 	campaign["run_available"] = choices
+
+func _generate_regional_map(seed: int) -> Array:
+	var tiles: Array = []
+	var scenario_index := 1
+	for y in range(REGIONAL_GRID.y):
+		for x in range(REGIONAL_GRID.x):
+			var key := _regional_key(x, y)
+			var terrain := _regional_terrain_for(seed, x, y)
+			var tier: int = clamp(1 + int(floor(float(x) / 2.0)), 1, 5)
+			var scenario_id := ""
+			if key != REGIONAL_START_KEY and x <= 4 and scenario_index <= RUN_POOL_SIZE:
+				scenario_id = "%s%02d" % [RUN_SCENARIO_PREFIX, scenario_index]
+				scenario_index += 1
+			tiles.append({
+				"key": key,
+				"x": x,
+				"y": y,
+				"terrain": terrain,
+				"tier": tier,
+				"scenario_id": scenario_id,
+				"marker": "start" if key == REGIONAL_START_KEY else ("contract" if scenario_id != "" else "scenic")
+			})
+	return tiles
+
+func _regional_terrain_for(seed: int, x: int, y: int) -> String:
+	if x == 0 or x == REGIONAL_GRID.x - 1 or y == 0 or y == REGIONAL_GRID.y - 1:
+		return "coast" if _regional_hash(seed, x, y, 7) % 3 == 0 else "plains"
+	var h := _regional_hash(seed, x, y, 11) % 100
+	if h < 14:
+		return "forest"
+	if h < 28:
+		return "hills"
+	if h < 39:
+		return "mountains"
+	if h < 51:
+		return "river"
+	if h < 64:
+		return "city"
+	if h < 76:
+		return "industry"
+	return "plains"
+
+func _regional_hash(seed: int, x: int, y: int, salt: int) -> int:
+	return abs(seed * 1103515245 + x * 374761393 + y * 668265263 + salt * 2246822519)
+
+func _regional_key(x: int, y: int) -> String:
+	return "%d,%d" % [x, y]
+
+func _regional_key_to_pos(key: String) -> Vector2i:
+	var parts := key.split(",")
+	if parts.size() != 2:
+		return Vector2i.ZERO
+	return Vector2i(int(parts[0]), int(parts[1]))
+
+func _regional_tile_for_key(key: String) -> Dictionary:
+	for tile in campaign.get("regional_map", []):
+		if String(tile.get("key", "")) == key:
+			return tile
+	return {}
+
+func _regional_tile_for_scenario(id: String) -> Dictionary:
+	for tile in campaign.get("regional_map", []):
+		if String(tile.get("scenario_id", "")) == id:
+			return tile
+	return {}
+
+func _regional_neighbors(key: String) -> Array:
+	var pos := _regional_key_to_pos(key)
+	var result: Array = []
+	for d in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.UP, Vector2i.DOWN]:
+		var p: Vector2i = pos + d
+		if p.x >= 0 and p.y >= 0 and p.x < REGIONAL_GRID.x and p.y < REGIONAL_GRID.y:
+			result.append(_regional_key(p.x, p.y))
+	return result
+
+func _regional_available_tile_keys() -> Array:
+	var position := String(campaign.get("regional_position", REGIONAL_START_KEY))
+	var completed: Array = campaign.get("regional_completed_tiles", [])
+	var visible: Array = campaign.get("regional_visible_tiles", [])
+	var adjacent := _regional_neighbors(position)
+	var result: Array = []
+	for key in visible:
+		var key_str := String(key)
+		if completed.has(key_str) or not adjacent.has(key_str):
+			continue
+		var tile := _regional_tile_for_key(key_str)
+		var scenario_id := String(tile.get("scenario_id", ""))
+		if scenario_id != "" and not _run_completed_has(scenario_id):
+			result.append(key_str)
+	return result
+
+func _nearest_uncompleted_regional_contract() -> String:
+	var current := _regional_key_to_pos(String(campaign.get("regional_position", REGIONAL_START_KEY)))
+	var best_key := ""
+	var best_dist := 99999
+	for tile in campaign.get("regional_map", []):
+		var id := String(tile.get("scenario_id", ""))
+		var key := String(tile.get("key", ""))
+		if id == "" or _run_completed_has(id):
+			continue
+		var p := Vector2i(int(tile.get("x", 0)), int(tile.get("y", 0)))
+		var dist: int = abs(p.x - current.x) + abs(p.y - current.y)
+		if dist < best_dist:
+			best_dist = dist
+			best_key = key
+	return best_key
+
+func _reveal_regional_neighbors(key: String) -> void:
+	var visible: Array = campaign.get("regional_visible_tiles", [])
+	for n in _regional_neighbors(key):
+		if not visible.has(n):
+			visible.append(n)
+	campaign["regional_visible_tiles"] = visible
+
+func _complete_regional_tile_for_scenario(id: String) -> void:
+	var active_key := String(campaign.get("active_regional_tile", ""))
+	var tile := _regional_tile_for_key(active_key)
+	if tile.is_empty() or String(tile.get("scenario_id", "")) != id:
+		tile = _regional_tile_for_scenario(id)
+		active_key = String(tile.get("key", ""))
+	if active_key == "":
+		return
+	campaign["regional_position"] = active_key
+	var completed_tiles: Array = campaign.get("regional_completed_tiles", [])
+	if not completed_tiles.has(active_key):
+		completed_tiles.append(active_key)
+	campaign["regional_completed_tiles"] = completed_tiles
+	_reveal_regional_neighbors(active_key)
+	campaign["active_regional_tile"] = ""
+	_generate_upgrade_shop()
+
+func _upgrade_defs() -> Dictionary:
+	return {
+		"reward_multiplier": {"name": "Regional Yield", "scope": "permanent", "cost": 260, "desc": "+10% money rewards."},
+		"station_planning": {"name": "Station Planning", "scope": "permanent", "cost": 340, "desc": "+1 platform on generated contracts."},
+		"train_voucher": {"name": "Train Voucher", "scope": "run", "cost": 180, "desc": "Next train has no material score."},
+		"dispatch_reliability": {"name": "Dispatch Relay", "scope": "run", "cost": 220, "desc": "More forgiving wait targets this run."},
+		"material_efficiency": {"name": "Lean Build", "scope": "run", "cost": 240, "desc": "Material score counts 10% lighter."},
+		"throughput_boost": {"name": "Flow Crew", "scope": "run", "cost": 210, "desc": "Station work tolerates tighter layouts."}
+	}
+
+func _generate_upgrade_shop() -> void:
+	var defs := _upgrade_defs()
+	var ids: Array = defs.keys()
+	var offers: Array = []
+	var seed: int = int(campaign.get("regional_map_seed", 32027)) + int(campaign.get("run_step", 0)) * 17
+	var offset := 0
+	while offers.size() < 3 and offset < ids.size() * 3:
+		var id := String(ids[abs(seed + offset * 5) % ids.size()])
+		if not offers.has(id):
+			offers.append(id)
+		offset += 1
+	campaign["upgrade_shop"] = offers
+
+func _purchase_upgrade(id: String) -> void:
+	var defs := _upgrade_defs()
+	if not defs.has(id):
+		return
+	var def: Dictionary = defs[id]
+	var cost := int(def.get("cost", 0))
+	if int(campaign.get("money", 0)) < cost:
+		return
+	campaign["money"] = int(campaign.get("money", 0)) - cost
+	var scope := String(def.get("scope", "run"))
+	var bucket_key := "permanent_upgrades" if scope == "permanent" else "run_upgrades"
+	var bucket: Dictionary = campaign.get(bucket_key, {})
+	bucket[id] = int(bucket.get(id, 0)) + 1
+	campaign[bucket_key] = bucket
+	_generate_upgrade_shop()
+	_save_campaign()
+	rebuild_ui()
+	queue_redraw()
+
+func _upgrade_level(id: String) -> int:
+	var permanent: Dictionary = campaign.get("permanent_upgrades", {})
+	var run: Dictionary = campaign.get("run_upgrades", {})
+	return int(permanent.get(id, 0)) + int(run.get(id, 0))
 
 func _remaining_run_scenario_count() -> int:
 	return max(0, RUN_POOL_SIZE - (campaign.get("run_completed", []) as Array).size())
@@ -810,27 +1036,99 @@ func _regional_visible_scenarios() -> Array:
 			visible.append(s)
 	return visible
 
+func _tutorial_regional_scenarios() -> Array:
+	var visible: Array = []
+	for s in scenarios:
+		var id := String(s.get("id", ""))
+		if id in ["coal_valley", "central_yard", "steelworks", "overtake_pass"]:
+			visible.append(s)
+	return visible
+
 func _apply_run_pressure_to_scenario(scenario: Dictionary) -> Dictionary:
 	var sc := scenario.duplicate(true)
 	if not _is_run_scenario_id(String(sc.get("id", ""))):
 		return sc
+	var tile := _regional_tile_for_scenario(String(sc.get("id", "")))
 	var traits: Dictionary = campaign.get("regional_traits", {})
 	var through := int(traits.get("through_traffic", 0))
 	var capacity := int(traits.get("capacity_rating", 0))
 	var reliability := float(traits.get("reliability", 1.0))
 	var pressure: int = int(max(0, through - capacity))
-	sc["target"] = int(sc.get("target", 60)) + pressure * 2 + int((1.0 - reliability) * 20.0)
-	sc["fleet_goal"] = min(8, int(sc.get("fleet_goal", 1)) + int(pressure >= 8))
-	sc["start_budget"] = int(sc.get("start_budget", 1500)) + int(campaign.get("money", 0)) / 12 + capacity * 10
-	sc["wait_target"] = max(28.0, float(sc.get("wait_target", 45.0)) - min(14.0, float(pressure)))
+	var tile_tier := int(tile.get("tier", 1))
+	sc["target"] = int(sc.get("target", 60)) + pressure * 2 + int((1.0 - reliability) * 20.0) + tile_tier * 8 + int(campaign.get("run_step", 0)) * 2
+	sc["fleet_goal"] = min(8, int(sc.get("fleet_goal", 1)) + int(pressure >= 8) + int(tile_tier >= 4))
+	sc["start_budget"] = int(sc.get("start_budget", 1500)) + capacity * 10
+	sc["wait_target"] = max(28.0, float(sc.get("wait_target", 45.0)) - min(14.0, float(pressure)) + float(_upgrade_level("dispatch_reliability")) * 4.0)
+	sc["regional_tile"] = tile.duplicate(true)
+	_apply_regional_tile_modifier(sc, tile)
+	_apply_upgrade_scenario_modifiers(sc)
 	var briefing := String(sc.get("briefing", ""))
-	briefing += "\nInherited region: Through traffic %d, capacity rating %d, reliability %.0f%%. These values come from previous completed nodes." % [
+	briefing += "\nRegional tile: %s tier %d. Inherited region: Through traffic %d, capacity rating %d, reliability %.0f%%. These values come from previous completed nodes." % [
+		String(tile.get("terrain", "plains")).capitalize(),
+		tile_tier,
 		through,
 		capacity,
 		reliability * 100.0
 	]
 	sc["briefing"] = briefing
 	return sc
+
+func _apply_regional_tile_modifier(sc: Dictionary, tile: Dictionary) -> void:
+	if tile.is_empty():
+		return
+	var terrain := String(tile.get("terrain", "plains"))
+	var tier := int(tile.get("tier", 1))
+	sc["reward_money"] = int(sc.get("reward_money", 0)) + tier * 45
+	sc["reward_load"] = int(sc.get("reward_load", 0)) + tier
+	if terrain == "city":
+		sc["target"] = int(sc.get("target", 0)) + 20
+		sc["reward_load"] = int(sc.get("reward_load", 0)) + 4
+		sc["reward_money"] = int(sc.get("reward_money", 0)) + 110
+	elif terrain == "industry":
+		sc["target"] = int(sc.get("target", 0)) + 28
+		sc["reward_capacity"] = int(sc.get("reward_capacity", 0)) + 4
+		sc["reward_money"] = int(sc.get("reward_money", 0)) + 130
+	elif terrain == "river":
+		_add_regional_obstacle_line(sc, "river")
+		sc["reward_money"] = int(sc.get("reward_money", 0)) + 90
+	elif terrain == "mountains":
+		_add_regional_obstacle_line(sc, "mountain")
+		sc["reward_money"] = int(sc.get("reward_money", 0)) + 140
+	elif terrain == "hills":
+		_add_regional_obstacle_line(sc, "rock")
+		sc["reward_money"] = int(sc.get("reward_money", 0)) + 80
+	elif terrain == "coast":
+		_add_regional_obstacle_line(sc, "ocean")
+		sc["reward_money"] = int(sc.get("reward_money", 0)) + 100
+	elif terrain == "forest":
+		sc["wait_target"] = float(sc.get("wait_target", 45.0)) - 3.0
+		sc["reward_money"] = int(sc.get("reward_money", 0)) + 45
+
+func _add_regional_obstacle_line(sc: Dictionary, terrain_type: String) -> void:
+	var terrain: Array = sc.get("terrain", []).duplicate(true)
+	var grid: Vector2i = sc.get("grid", Vector2i(18, 11))
+	var blocked: Array[Vector2i] = _station_positions(sc.get("stations", []))
+	var x: int = int(clamp(floor(float(grid.x) * 0.5), 3.0, float(grid.x - 4)))
+	if terrain_type in ["river", "ocean"]:
+		for y in range(1, grid.y - 1):
+			var p := Vector2i(x, y)
+			if not blocked.has(p):
+				terrain.append({"pos": p, "type": terrain_type})
+	else:
+		var y: int = int(clamp(floor(float(grid.y) * 0.33), 2.0, float(grid.y - 3)))
+		for tx in range(3, grid.x - 3, 2):
+			var p := Vector2i(tx, y + ((tx + x) % 2))
+			if not blocked.has(p):
+				terrain.append({"pos": p, "type": terrain_type})
+	sc["terrain"] = terrain
+
+func _apply_upgrade_scenario_modifiers(sc: Dictionary) -> void:
+	var platform_bonus := _upgrade_level("station_planning")
+	if platform_bonus > 0:
+		for st in sc.get("stations", []):
+			st["platforms"] = int(st.get("platforms", 1)) + platform_bonus
+	if _upgrade_level("throughput_boost") > 0:
+		sc["wait_target"] = float(sc.get("wait_target", 45.0)) + float(_upgrade_level("throughput_boost")) * 3.0
 
 func _record_run_completion(sc: Dictionary, avg_wait: float, productive: bool) -> void:
 	var id := String(sc.get("id", ""))
@@ -840,6 +1138,7 @@ func _record_run_completion(sc: Dictionary, avg_wait: float, productive: bool) -
 	run_completed.append(id)
 	campaign["run_completed"] = run_completed
 	campaign["run_step"] = min(RUN_LENGTH, run_completed.size())
+	_complete_regional_tile_for_scenario(id)
 	var reliability_score := 1.0
 	if float(local.get("wait_target", 1.0)) > 0.0:
 		reliability_score = clamp(1.0 - (avg_wait / max(1.0, float(local.get("wait_target", 1.0)))) * 0.35, 0.35, 1.0)
@@ -925,7 +1224,7 @@ func _build_regional_ui() -> void:
 	add_child(title)
 
 	var hint := Label.new()
-	hint.text = "Pick one available contract. Complete 20 maps; every node changes the pressure on the next."
+	hint.text = "Choose an adjacent regional tile. Complete 20 contracts; each tile and upgrade changes the next map."
 	hint.add_theme_font_size_override("font_size", 17)
 	hint.add_theme_color_override("font_color", Color.html("#28363f"))
 	hint.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -952,15 +1251,20 @@ func _build_regional_ui() -> void:
 	side_panel.z_index = 30
 	side_panel.z_as_relative = false
 	add_child(side_panel)
+	var side_box := VBoxContainer.new()
+	side_box.add_theme_constant_override("separation", 8)
+	side_panel.add_child(side_box)
 	side_text = RichTextLabel.new()
 	side_text.fit_content = true
 	side_text.scroll_active = false
 	side_text.bbcode_enabled = true
+	side_text.custom_minimum_size = Vector2(0, 360)
 	side_text.add_theme_color_override("default_color", Color.html("#172028"))
 	side_text.add_theme_font_size_override("normal_font_size", 16)
 	side_text.add_theme_color_override("font_outline_color", Color(1, 0.95, 0.78, 0.55))
 	side_text.add_theme_constant_override("outline_size", 1)
-	side_panel.add_child(side_text)
+	side_box.add_child(side_text)
+	_build_upgrade_shop_buttons(side_box)
 	_refresh_regional_side_text()
 
 func _build_local_ui() -> void:
@@ -994,6 +1298,25 @@ func _build_local_ui() -> void:
 
 	_build_mobile_overlay_ui()
 	_refresh_local_side_text()
+
+func _build_upgrade_shop_buttons(parent: VBoxContainer) -> void:
+	_ensure_run_state()
+	var defs := _upgrade_defs()
+	var header := Label.new()
+	header.text = "Upgrade Shop"
+	header.add_theme_color_override("font_color", Color.html("#172028"))
+	header.add_theme_font_size_override("font_size", 18)
+	parent.add_child(header)
+	for offer_id in campaign.get("upgrade_shop", []):
+		var id := String(offer_id)
+		if not defs.has(id):
+			continue
+		var def: Dictionary = defs[id]
+		var b := _add_button(parent, "%s\n$%d" % [def.get("name", id), int(def.get("cost", 0))], func(upgrade_id := id): _purchase_upgrade(upgrade_id))
+		b.custom_minimum_size = Vector2(0, 48)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.disabled = int(campaign.get("money", 0)) < int(def.get("cost", 0))
+		b.add_theme_font_size_override("font_size", 13)
 
 func _build_results_ui() -> void:
 	_add_backplate(ui_panel_texture, Control.PRESET_CENTER, Vector4(-345, -235, 345, 245), Vector4(180, 130, 180, 130), Color(1, 1, 1, 0.96))
@@ -1163,17 +1486,16 @@ func _close_context_menu() -> void:
 func _context_actions_for_target(target_type: String, target_id: String, grid_pos: Vector2i) -> Array:
 	var actions: Array = []
 	if target_type == "station" and station_by_id.has(target_id):
-		var st: Dictionary = station_by_id[target_id]
-		if st.get("role", "") == "source":
-			actions.append({"label": "Service", "callback": func(id := target_id): _context_create_service(id)})
-			actions.append({"label": "Train", "callback": func(id := target_id): _context_buy_train_for_station(id)})
-		if _source_has_lines(target_id) or String(st.get("role", "")) != "source":
-			actions.append({"label": "Edit", "callback": func(id := target_id): _context_edit_service_for_station(id)})
-		actions.append({"label": "Platform", "callback": func(id := target_id): _add_platform_at(id)})
+		_append_station_context_actions(actions, target_id)
+	elif target_type == "station_train":
+		var station_id := _station_id_from_combo_target(target_id)
+		var train_id := _train_id_from_combo_target(target_id)
+		if station_by_id.has(station_id):
+			_append_station_context_actions(actions, station_id)
+		if train_id != "":
+			_append_train_context_actions(actions, train_id)
 	elif target_type == "train":
-		actions.append({"label": "Assign", "callback": func(id := target_id): _context_assign_train(id)})
-		actions.append({"label": "Clear", "callback": func(id := target_id): _context_clear_train_line(id)})
-		actions.append({"label": "Inspect", "callback": func(id := target_id): _show_inspect_chip_for_target("train", id, Vector2i(-999, -999))})
+		_append_train_context_actions(actions, target_id)
 	elif target_type == "signal":
 		actions.append({"label": "Rotate", "callback": func(p := grid_pos): _rotate_signal_at(p)})
 		actions.append({"label": "Pair", "callback": func(p := grid_pos): _place_signal_pair(p, _pair_signal_type_for(p))})
@@ -1188,12 +1510,26 @@ func _context_actions_for_target(target_type: String, target_id: String, grid_po
 		actions.append({"label": "Track", "callback": func(p := grid_pos): _place_track(p)})
 	return actions
 
+func _append_station_context_actions(actions: Array, station_id: String) -> void:
+	var st: Dictionary = station_by_id[station_id]
+	if st.get("role", "") == "source":
+		actions.append({"label": "Service", "callback": func(id := station_id): _context_create_service(id)})
+		actions.append({"label": "Train", "callback": func(id := station_id): _context_buy_train_for_station(id)})
+	if _source_has_lines(station_id) or String(st.get("role", "")) != "source":
+		actions.append({"label": "Edit", "callback": func(id := station_id): _context_edit_service_for_station(id)})
+	actions.append({"label": "Platform", "callback": func(id := station_id): _add_platform_at(id)})
+
+func _append_train_context_actions(actions: Array, train_id: String) -> void:
+	actions.append({"label": "Assign", "callback": func(id := train_id): _context_assign_train(id)})
+	actions.append({"label": "Clear", "callback": func(id := train_id): _context_clear_train_line(id)})
+	actions.append({"label": "Inspect", "callback": func(id := train_id): _show_inspect_chip_for_target("train", id, Vector2i(-999, -999))})
+
 func _build_radial_menu(actions: Array) -> void:
 	if context_menu_layer == null:
 		return
 	var count: int = max(1, actions.size())
-	var radius := 72.0
-	var center := _clamped_context_center(context_screen_pos)
+	var radius: float = 72.0 + float(max(0, count - 4)) * 10.0
+	var center := _clamped_context_center(context_screen_pos, radius)
 	for i in range(actions.size()):
 		var action: Dictionary = actions[i]
 		var angle := -PI * 0.5 + (TAU * float(i) / float(count))
@@ -1216,12 +1552,16 @@ func _run_context_action(callback: Callable) -> void:
 	_refresh_local_side_text()
 	queue_redraw()
 
-func _clamped_context_center(screen_pos: Vector2) -> Vector2:
-	return Vector2(clamp(screen_pos.x, 110.0, max(110.0, size.x - 110.0)), clamp(screen_pos.y, 132.0, max(132.0, size.y - 132.0)))
+func _clamped_context_center(screen_pos: Vector2, radius: float = 72.0) -> Vector2:
+	var margin: float = radius + 48.0
+	return Vector2(clamp(screen_pos.x, margin, max(margin, size.x - margin)), clamp(screen_pos.y, margin, max(margin, size.y - margin)))
 
 func _context_target_at(screen_pos: Vector2) -> Dictionary:
 	var station_id := _hit_station_id(screen_pos)
 	if station_id != "":
+		var train_id_at_station := _hit_train_id(screen_pos)
+		if train_id_at_station != "":
+			return {"type": "station_train", "id": _combo_target_id(station_id, train_id_at_station), "pos": station_by_id[station_id]["pos"]}
 		return {"type": "station", "id": station_id, "pos": station_by_id[station_id]["pos"]}
 	var train_id := _hit_train_id(screen_pos)
 	if train_id != "":
@@ -1233,6 +1573,17 @@ func _context_target_at(screen_pos: Vector2) -> Dictionary:
 	if _is_in_grid(gp) and tracks.has(gp):
 		return {"type": "track", "id": "", "pos": gp}
 	return {"type": "tile", "id": "", "pos": gp}
+
+func _combo_target_id(station_id: String, train_id: String) -> String:
+	return "%s|%s" % [station_id, train_id]
+
+func _station_id_from_combo_target(target_id: String) -> String:
+	var parts := target_id.split("|", false, 1)
+	return String(parts[0]) if not parts.is_empty() else ""
+
+func _train_id_from_combo_target(target_id: String) -> String:
+	var parts := target_id.split("|", false, 1)
+	return String(parts[1]) if parts.size() > 1 else ""
 
 func _hit_station_id(pos: Vector2) -> String:
 	_update_board_layout()
@@ -1258,7 +1609,15 @@ func _return_to_region() -> void:
 	queue_redraw()
 
 func _handle_regional_click(pos: Vector2) -> void:
-	for s in _regional_visible_scenarios():
+	var tile := _regional_tile_at_screen(pos)
+	if not tile.is_empty():
+		var key := String(tile.get("key", ""))
+		var scenario_id := String(tile.get("scenario_id", ""))
+		if scenario_id != "" and _regional_available_tile_keys().has(key):
+			campaign["active_regional_tile"] = key
+			start_scenario(scenario_id)
+		return
+	for s in _tutorial_regional_scenarios():
 		var node_pos: Vector2 = _regional_node_position(s["id"])
 		if pos.distance_to(node_pos) <= 54.0:
 			if _scenario_is_available(s["id"]):
@@ -1266,6 +1625,11 @@ func _handle_regional_click(pos: Vector2) -> void:
 			return
 
 func start_scenario(id: String) -> void:
+	if _is_run_scenario_id(id):
+		var active_tile := _regional_tile_for_key(String(campaign.get("active_regional_tile", "")))
+		if active_tile.is_empty() or String(active_tile.get("scenario_id", "")) != id:
+			var tile := _regional_tile_for_scenario(id)
+			campaign["active_regional_tile"] = String(tile.get("key", ""))
 	var scenario := _apply_run_pressure_to_scenario(_get_scenario(id))
 	if scenario.is_empty():
 		return
@@ -1316,6 +1680,8 @@ func start_scenario(id: String) -> void:
 		"production_remainder": 0.0,
 		"storage": {},
 		"infra_cost": 0,
+		"elapsed_time": 0.0,
+		"train_vouchers": _upgrade_level("train_voucher"),
 		"deadlocks": 0,
 		"max_queue": 0,
 		"paused": true,
@@ -1354,7 +1720,7 @@ func _scenario_is_available(id: String) -> bool:
 	return false
 
 func _regional_node_position(id: String) -> Vector2:
-	var y := size.y * 0.52
+	var y := size.y * 0.86
 	if _is_run_scenario_id(id):
 		var completed: Array = campaign.get("run_completed", [])
 		var visible_order: Array = []
@@ -1373,12 +1739,32 @@ func _regional_node_position(id: String) -> Vector2:
 		var start_y: float = size.y * 0.29
 		return Vector2(x, start_y + float(row) * 92.0)
 	if id == "coal_valley":
-		return Vector2(size.x * 0.16, y)
+		return Vector2(size.x * 0.18, y)
 	if id == "central_yard":
-		return Vector2(size.x * 0.38, y)
+		return Vector2(size.x * 0.36, y)
 	if id == "steelworks":
-		return Vector2(size.x * 0.60, y)
-	return Vector2(size.x * 0.82, y)
+		return Vector2(size.x * 0.54, y)
+	return Vector2(size.x * 0.72, y)
+
+func _regional_map_origin() -> Vector2:
+	var tile_size := _regional_draw_tile_size()
+	var map_size := Vector2(float(REGIONAL_GRID.x), float(REGIONAL_GRID.y)) * tile_size
+	var right_limit := size.x - 390.0
+	return Vector2(max(24.0, (right_limit - map_size.x) * 0.5), 190.0)
+
+func _regional_draw_tile_size() -> float:
+	return clamp(floor(min((max(size.x - 430.0, 420.0)) / float(REGIONAL_GRID.x), (max(size.y - 300.0, 320.0)) / float(REGIONAL_GRID.y))), 42.0, 72.0)
+
+func _regional_tile_rect(tile: Dictionary) -> Rect2:
+	var tile_size := _regional_draw_tile_size()
+	var origin := _regional_map_origin()
+	return Rect2(origin + Vector2(float(tile.get("x", 0)) * tile_size, float(tile.get("y", 0)) * tile_size), Vector2(tile_size, tile_size))
+
+func _regional_tile_at_screen(pos: Vector2) -> Dictionary:
+	for tile in campaign.get("regional_map", []):
+		if _regional_tile_rect(tile).has_point(pos):
+			return tile
+	return {}
 
 func _update_board_layout() -> void:
 	if local.is_empty() or not local.has("scenario"):
@@ -2200,7 +2586,10 @@ func _add_available_train(free: bool = true) -> void:
 	trains.append(t)
 	selected_train_id = t["id"]
 	if not free:
-		local["infra_cost"] += 300
+		if int(local.get("train_vouchers", 0)) > 0:
+			local["train_vouchers"] = int(local.get("train_vouchers", 0)) - 1
+		else:
+			local["infra_cost"] += 300
 	local_message = "%s bought as available stock. Select a line and assign it." % t["name"]
 	_update_status_labels()
 	_refresh_local_side_text()
@@ -2680,7 +3069,10 @@ func _buy_train_for_line(line_id: String, spend_money: bool = true) -> void:
 	train_seq += 1
 	trains.append(t)
 	if spend_money:
-		local["infra_cost"] += 300
+		if int(local.get("train_vouchers", 0)) > 0:
+			local["train_vouchers"] = int(local.get("train_vouchers", 0)) - 1
+		else:
+			local["infra_cost"] += 300
 	_try_dispatch_train_from_depot(t)
 	local_message = "%s bought on %s. Route: %s." % [t["name"], lines[line_id]["name"], " -> ".join(route)]
 	selected_tool = "track"
@@ -2723,13 +3115,12 @@ func _try_dispatch_train_from_depot(t: Dictionary) -> bool:
 	return true
 
 func _spend(money: int, _materials: int = 0) -> bool:
-	if int(local.get("money", 0)) < money:
-		local_message = "Not enough money."
-		return false
-	local["money"] = int(local["money"]) - money
+	# Local maps are permissive: construction records material footprint for rewards
+	# instead of blocking player experimentation with a cash budget.
 	return true
 
 func _update_local(delta: float) -> void:
+	local["elapsed_time"] = float(local.get("elapsed_time", 0.0)) + delta
 	_generate_station_cargo(delta)
 	_compute_blocks()
 	_dispatch_waiting_trains()
@@ -3247,10 +3638,14 @@ func _complete_scenario() -> void:
 	var fleet_met := _active_train_count() >= fleet_goal
 	var productive: bool = fleet_met and avg_wait <= float(local["wait_target"]) and int(local.get("deadlocks", 0)) == 0
 	var quality := "Productive network" if productive else "Completed with reliability warnings"
+	var reward_money := _completion_reward_money(sc, avg_wait, productive)
+	var material_par := _reward_material_par(sc)
+	var time_par := _reward_time_par(sc)
+	var elapsed := float(local.get("elapsed_time", 0.0))
 	result_data = {
 		"id": local["id"],
 		"name": local["name"],
-		"text": "[b]%s[/b]\n\n%s: %d / %d\nTotal Output: %d\nFleet: %d / %d trains\nAverage Train Wait: %.1fs / %.0fs target\nDeadlocks: %d\nMaximum Queue: %d\nInfrastructure Cost: $%d\n\nRegional Effect:\n+$%d per cycle\n+%d Traffic Load\n+%d Traffic Capacity" % [
+		"text": "[b]%s[/b]\n\n%s: %d / %d\nTotal Output: %d\nFleet: %d / %d trains\nAverage Train Wait: %.1fs / %.0fs target\nTime: %.0fs / %.0fs par\nMaterial Used: %d / %d par\nDeadlocks: %d\nMaximum Queue: %d\n\nRegional Reward:\n+$%d\n+%d Traffic Load\n+%d Traffic Capacity" % [
 			quality,
 			_progress_label(),
 			_completion_progress(),
@@ -3260,17 +3655,20 @@ func _complete_scenario() -> void:
 			fleet_goal,
 			avg_wait,
 			float(local["wait_target"]),
+			elapsed,
+			time_par,
+			int(local.get("infra_cost", 0)),
+			material_par,
 			int(local.get("deadlocks", 0)),
 			int(local.get("max_queue", 0)),
-			int(local.get("infra_cost", 0)),
-			int(sc.get("reward_money", 0)),
+			reward_money,
 			int(sc.get("reward_load", 0)),
 			int(sc.get("reward_capacity", 0))
 		]
 	}
 	if not campaign["completed"].has(local["id"]):
 		campaign["completed"].append(local["id"])
-		campaign["money"] = int(campaign["money"]) + int(sc.get("reward_money", 0))
+		campaign["money"] = int(campaign["money"]) + reward_money
 		campaign["traffic_load"] = int(campaign["traffic_load"]) + int(sc.get("reward_load", 0))
 		campaign["traffic_capacity"] = int(campaign["traffic_capacity"]) + int(sc.get("reward_capacity", 0))
 		_record_run_completion(sc, avg_wait, productive)
@@ -3278,6 +3676,34 @@ func _complete_scenario() -> void:
 	screen = Screen.RESULTS
 	rebuild_ui()
 	queue_redraw()
+
+func _completion_reward_money(sc: Dictionary, avg_wait: float, productive: bool) -> int:
+	var base := int(sc.get("reward_money", 0))
+	var effective_material: int = int(float(local.get("infra_cost", 0)) * max(0.55, 1.0 - float(_upgrade_level("material_efficiency")) * 0.10))
+	var material_bonus: int = int(max(0.0, float(_reward_material_par(sc) - effective_material) * 0.22))
+	var time_bonus: int = int(max(0.0, _reward_time_par(sc) - float(local.get("elapsed_time", 0.0))) * 1.4)
+	var wait_bonus: int = int(max(0.0, float(local.get("wait_target", 0.0)) - avg_wait) * 2.0)
+	var reliability_bonus := 120 if productive else 0
+	var over_target_bonus: int = int(max(0, _completion_progress() - int(local.get("target", 0))) * 0.4)
+	var total: int = max(0, base + material_bonus + time_bonus + wait_bonus + reliability_bonus + over_target_bonus)
+	return int(round(float(total) * (1.0 + float(_upgrade_level("reward_multiplier")) * 0.10)))
+
+func _reward_material_par(sc: Dictionary) -> int:
+	var ghost: Array = sc.get("ghost", [])
+	var route: Array = sc.get("route", [])
+	var track_steps: int = max(0, ghost.size() - 1)
+	if track_steps <= 0:
+		track_steps = max(6, route.size() * 5)
+	var signal_allowance: int = max(2, int(ceil(float(track_steps) / 5.0)))
+	var station_allowance: int = max(0, route.size() - 2)
+	return track_steps * 25 + signal_allowance * 80 + _fleet_goal() * 300 + station_allowance * 200
+
+func _reward_time_par(sc: Dictionary) -> float:
+	var target_amount := float(sc.get("target", local.get("target", 80)))
+	var route: Array = sc.get("route", [])
+	var route_pressure := float(max(2, route.size())) * 18.0
+	var fleet_pressure := float(_fleet_goal()) * 20.0
+	return max(75.0, target_amount * 1.45 + route_pressure + fleet_pressure)
 
 func _objective_progress() -> int:
 	if local.get("kind", "") == "yard":
@@ -3416,12 +3842,13 @@ func _update_status_labels() -> void:
 		var warning := "  Network Congested: income reduced" if int(campaign["traffic_load"]) > int(campaign["traffic_capacity"]) else ""
 		top_status.text = "Money: $%d   Traffic: %d / %d%s" % [campaign["money"], campaign["traffic_load"], campaign["traffic_capacity"], warning]
 	elif screen == Screen.LOCAL:
-		top_status.text = "%s | %d/%d %s | $%d | Fleet %d/%d | Wait %.0fs" % [
+		top_status.text = "%s | %d/%d %s | Used %d | Time %.0fs | Fleet %d/%d | Wait %.0fs" % [
 			local.get("name", ""),
 			_completion_progress(),
 			local.get("target", 0),
 			_progress_label(),
-			local.get("money", 0),
+			int(local.get("infra_cost", 0)),
+			float(local.get("elapsed_time", 0.0)),
 			_active_train_count(),
 			_fleet_goal(),
 			_average_wait()
@@ -3435,9 +3862,10 @@ func _refresh_regional_side_text() -> void:
 	_ensure_run_state()
 	var traits: Dictionary = campaign.get("regional_traits", {})
 	var text: String = "[b]Roguelike Regional Run[/b]\n\n"
-	text += "Complete %d interacting contracts. Each completed node adds output, traffic, capacity, and reliability pressure to later maps.\n\n" % RUN_LENGTH
+	text += "Complete %d adjacent regional tiles. Terrain, upgrades, and previous results shape every local contract.\n\n" % RUN_LENGTH
 	text += "Run Progress: %d / %d\n" % [int(campaign.get("run_step", 0)), RUN_LENGTH]
-	text += "Current Choices: %d / %d\n" % [(campaign.get("run_available", []) as Array).size(), RUN_CHOICES]
+	text += "Adjacent Choices: %d\n" % [(campaign.get("run_available", []) as Array).size()]
+	text += "Position: %s\nMoney: $%d\n" % [String(campaign.get("regional_position", REGIONAL_START_KEY)), int(campaign.get("money", 0))]
 	text += "Through Traffic: %d\nCapacity Rating: %d\nReliability: %.0f%%\nCoal: %d  Freight: %d  Steel: %d\n\n" % [
 		int(traits.get("through_traffic", 0)),
 		int(traits.get("capacity_rating", 0)),
@@ -3446,15 +3874,15 @@ func _refresh_regional_side_text() -> void:
 		int(traits.get("freight_output", 0)),
 		int(traits.get("steel_output", 0))
 	]
+	text += "[b]Upgrades[/b]\nPermanent: %s\nRun: %s\n\n" % [_upgrade_summary("permanent_upgrades"), _upgrade_summary("run_upgrades")]
 	if bool(campaign.get("run_won", false)):
 		text += "[color=green][b]Run Complete[/b][/color]\nThe region survived the full 20-map expansion.\n\n"
-	text += "[b]Available Contracts[/b]\n"
-	for s in _regional_visible_scenarios():
-		var id := String(s.get("id", ""))
-		if not _is_run_scenario_id(id):
-			continue
-		var state := "Completed" if _run_completed_has(id) else ("Available" if _scenario_is_available(id) else "Locked")
-		text += "[b]%s[/b] - %s\n%s\n\n" % [s["name"], state, s["objective"]]
+	text += "[b]Adjacent Contracts[/b]\n"
+	for id in campaign.get("run_available", []):
+		var tile := _regional_tile_for_scenario(String(id))
+		var s := _get_scenario(String(id))
+		if not tile.is_empty() and not s.is_empty():
+			text += "[b]%s[/b] T%d %s\n%s\n\n" % [s["name"], int(tile.get("tier", 1)), String(tile.get("terrain", "plains")).capitalize(), s["objective"]]
 	text += "[b]Tutorial Contracts[/b]\n"
 	for s in scenarios:
 		var id := String(s.get("id", ""))
@@ -3465,6 +3893,17 @@ func _refresh_regional_side_text() -> void:
 	if int(campaign["traffic_load"]) > int(campaign["traffic_capacity"]):
 		text += "[color=orange]Network Congested[/color]\nTraffic load exceeds capacity. Future maps begin under extra pressure.\n"
 	side_text.text = text
+
+func _upgrade_summary(bucket_key: String) -> String:
+	var bucket: Dictionary = campaign.get(bucket_key, {})
+	if bucket.is_empty():
+		return "none"
+	var defs := _upgrade_defs()
+	var parts: Array[String] = []
+	for id in bucket.keys():
+		var def: Dictionary = defs.get(id, {"name": id})
+		parts.append("%s x%d" % [def.get("name", id), int(bucket.get(id, 0))])
+	return ", ".join(parts)
 
 func _refresh_local_side_text() -> void:
 	if screen != Screen.LOCAL:
@@ -3478,7 +3917,7 @@ func _refresh_local_side_text() -> void:
 		_fleet_goal(),
 		_average_wait()
 	]
-	text += "$%d  Depot %d  Tool %s" % [int(local.get("money", 0)), _available_train_count(), selected_tool.capitalize()]
+	text += "Used %d  Time %.0fs  Depot %d  Tool %s" % [int(local.get("infra_cost", 0)), float(local.get("elapsed_time", 0.0)), _available_train_count(), selected_tool.capitalize()]
 	if selected_train_id != "":
 		for t in trains:
 			if t["id"] == selected_train_id:
@@ -3489,7 +3928,7 @@ func _refresh_local_side_text() -> void:
 		text += "\n[b]Signal[/b] %s %s, block %s, %s" % [_signal_type(selected_signal_pos), _dir_name(_signal_dir(selected_signal_pos)), bid, _signal_summary(selected_signal_pos)]
 	if local_message != "":
 		text += "\n%s" % _short_ui_text(local_message, 96)
-	text += "\nDeadlocks %d  Queue %d  Infra $%d" % [local.get("deadlocks", 0), local.get("max_queue", 0), local.get("infra_cost", 0)]
+	text += "\nDeadlocks %d  Queue %d  Material %d" % [local.get("deadlocks", 0), local.get("max_queue", 0), local.get("infra_cost", 0)]
 	if local.get("kind", "") == "steel":
 		text += "  Steel %d" % int(local.get("steel_buffer", 0))
 	if side_text != null:
@@ -3538,6 +3977,18 @@ func _show_inspect_chip_for_target(target_type: String, target_id: String, grid_
 	elif target_type == "station" and station_by_id.has(target_id):
 		var st: Dictionary = station_by_id[target_id]
 		text = "[b]%s[/b]\n%s %s  P%d" % [st.get("name", target_id), _station_output_badge_text(st), _station_need_badge_text(st), int(st.get("platforms", 1))]
+	elif target_type == "station_train":
+		var station_id := _station_id_from_combo_target(target_id)
+		var train_id := _train_id_from_combo_target(target_id)
+		if station_by_id.has(station_id):
+			var st: Dictionary = station_by_id[station_id]
+			text = "[b]%s[/b] + [b]%s[/b]\n%s %s  P%d" % [
+				st.get("name", station_id),
+				train_id,
+				_station_output_badge_text(st),
+				_station_need_badge_text(st),
+				int(st.get("platforms", 1))
+			]
 	elif grid_pos.x > -900:
 		text = "[b]%s[/b] %s" % [target_type.capitalize(), _tile_label(grid_pos)]
 	inspect_chip.text = text
@@ -3705,31 +4156,86 @@ func _draw() -> void:
 func _draw_regional() -> void:
 	if art_texture:
 		draw_texture_rect(art_texture, Rect2(Vector2(size.x - 520, size.y - 500), Vector2(450, 450)), false, Color(1, 1, 1, 0.32))
-	var visible := _regional_visible_scenarios()
-	var previous_run_pos := Vector2.INF
-	for s in visible:
-		var id := String(s["id"])
-		var p := _regional_node_position(id)
-		if _is_run_scenario_id(id):
-			if previous_run_pos != Vector2.INF:
-				var delta := p - previous_run_pos
-				_draw_piece(game_track_texture, (p + previous_run_pos) * 0.5, Vector2(delta.length(), 54), delta.angle(), Color(1, 1, 1, 0.58))
-			previous_run_pos = p
-	for s in visible:
+	_draw_regional_tile_map()
+	for s in _tutorial_regional_scenarios():
 		var id := String(s["id"])
 		var p := _regional_node_position(id)
 		var completed: bool = campaign["completed"].has(id)
 		var available: bool = _scenario_is_available(id)
 		var col: Color = Color.html("#78d891") if completed else (Color.html("#ffe06d") if available else Color.html("#a5afb4"))
-		var draw_size := Vector2(104, 104) if _is_run_scenario_id(id) else Vector2(86, 86)
+		var draw_size := Vector2(76, 76)
 		if not _draw_piece(game_regional_node_texture, p, draw_size, 0.0, col):
-			draw_circle(p, 54, col)
-			draw_circle(p, 46, Color(1, 1, 1, 0.38))
-		_draw_map_label(p + Vector2(-64, 66), String(s["name"]), 128, 15)
+			draw_circle(p, 38, col)
+			draw_circle(p, 32, Color(1, 1, 1, 0.38))
+		_draw_map_label(p + Vector2(-58, 48), String(s["name"]), 116, 13)
 		var status := "Click" if available else ("Done" if completed else "Locked")
-		if _is_run_scenario_id(id) and completed:
-			status = "Run %d" % _run_completion_index(id)
-		_draw_map_label(p + Vector2(-48, 88), status, 96, 13, Color(1.0, 0.98, 0.84, 1.0))
+		_draw_map_label(p + Vector2(-42, 66), status, 84, 12, Color(1.0, 0.98, 0.84, 1.0))
+
+func _draw_regional_tile_map() -> void:
+	_ensure_run_state()
+	var completed_tiles: Array = campaign.get("regional_completed_tiles", [])
+	var visible_tiles: Array = campaign.get("regional_visible_tiles", [])
+	var available_tiles := _regional_available_tile_keys()
+	var current_key := String(campaign.get("regional_position", REGIONAL_START_KEY))
+	for tile in campaign.get("regional_map", []):
+		var rect := _regional_tile_rect(tile)
+		var key := String(tile.get("key", ""))
+		var visible := visible_tiles.has(key) or completed_tiles.has(key) or key == REGIONAL_START_KEY
+		var col := Color(1, 1, 1, 1) if visible else Color(0.36, 0.39, 0.38, 0.58)
+		_draw_regional_atlas_tile(_terrain_tile_index(String(tile.get("terrain", "plains"))), rect, col)
+		draw_rect(rect, Color(0.05, 0.09, 0.11, 0.42), false, 1.0)
+	for key in completed_tiles:
+		var tile := _regional_tile_for_key(String(key))
+		if not tile.is_empty():
+			_draw_regional_atlas_tile(13, _regional_tile_rect(tile).grow(-8), Color(1, 1, 1, 0.92))
+	for key in available_tiles:
+		var tile := _regional_tile_for_key(String(key))
+		if not tile.is_empty():
+			_draw_regional_atlas_tile(12, _regional_tile_rect(tile).grow(-7), Color(1, 1, 1, 0.96))
+	for tile in campaign.get("regional_map", []):
+		var key := String(tile.get("key", ""))
+		var scenario_id := String(tile.get("scenario_id", ""))
+		if scenario_id == "" or not (visible_tiles.has(key) or completed_tiles.has(key) or key == current_key):
+			continue
+		var rect := _regional_tile_rect(tile)
+		_draw_regional_atlas_tile(10, rect.grow(-14), Color(1, 1, 1, 0.9))
+		if available_tiles.has(key):
+			_draw_map_label(rect.position + Vector2(3, rect.size.y - 22), "T%d" % int(tile.get("tier", 1)), rect.size.x - 6, 12, Color.html("#ffe06d"))
+	if _regional_tile_for_key(current_key).is_empty():
+		return
+	_draw_regional_atlas_tile(14, _regional_tile_rect(_regional_tile_for_key(current_key)).grow(-5), Color(1, 1, 1, 1))
+
+func _draw_regional_atlas_tile(index: int, rect: Rect2, modulate_color: Color = Color.WHITE) -> void:
+	if regional_tileset_texture != null:
+		var src := Rect2(Vector2(float(index % 8) * REGIONAL_TILE_SIZE, float(int(index / 8)) * REGIONAL_TILE_SIZE), Vector2(REGIONAL_TILE_SIZE, REGIONAL_TILE_SIZE))
+		draw_texture_rect_region(regional_tileset_texture, rect, src, modulate_color)
+		return
+	draw_rect(rect, _fallback_regional_tile_color(index) * modulate_color)
+
+func _terrain_tile_index(terrain: String) -> int:
+	var idx := REGIONAL_TILE_TERRAINS.find(terrain)
+	return max(0, idx)
+
+func _fallback_regional_tile_color(index: int) -> Color:
+	var colors := [
+		Color.html("#a9d77a"),
+		Color.html("#5ea86c"),
+		Color.html("#b5b86f"),
+		Color.html("#8d8b83"),
+		Color.html("#76b5d6"),
+		Color.html("#d4c782"),
+		Color.html("#d6aa64"),
+		Color.html("#b98f6a"),
+		Color.html("#d8c38b"),
+		Color.html("#f0e18a"),
+		Color.html("#dde6f0"),
+		Color.html("#d7b56d"),
+		Color.html("#ffe06d"),
+		Color.html("#78d891"),
+		Color.html("#ffefb0"),
+		Color.html("#5a6064")
+	]
+	return colors[index % colors.size()]
 
 func _run_completion_index(id: String) -> int:
 	var completed: Array = campaign.get("run_completed", [])

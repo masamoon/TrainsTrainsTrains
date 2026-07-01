@@ -16,7 +16,7 @@ func _initialize() -> void:
 	_run_context_menu_smoke(main)
 	_run_productive_output_smoke(main)
 	_run_debug_money_smoke(main)
-	_run_money_only_build_smoke(main)
+	_run_local_material_accounting_smoke(main)
 	_run_diagonal_track_smoke(main)
 	_run_signal_rotation_smoke(main)
 	_run_signal_click_cycle_smoke(main)
@@ -38,6 +38,7 @@ func _initialize() -> void:
 	_run_restart_preserves_fleet_smoke(main)
 	_run_station_resource_badge_smoke(main)
 	_run_generated_pool_smoke(main)
+	_run_regional_tile_map_smoke(main)
 	_run_generated_contract_play_smoke(main)
 	_run_run_progression_smoke(main)
 	_run_reset_progress_smoke(main)
@@ -117,7 +118,9 @@ func _run_context_menu_smoke(main: Node) -> void:
 	main._context_assign_train(String(main.trains[0]["id"]))
 	_require(String(main.trains[0].get("line_id", "")) == main.selected_line_id, "Train should be assignable through object-first context actions.")
 	var overlap_target: Dictionary = main._context_target_at(station_screen)
-	_require(String(overlap_target.get("type", "")) == "station", "Station context actions should remain reachable when a train overlaps the station.")
+	_require(String(overlap_target.get("type", "")) == "station_train", "Occupied stations should expose combined station and train context actions.")
+	var overlap_actions: Array = main._context_actions_for_target(String(overlap_target.get("type", "")), String(overlap_target.get("id", "")), overlap_target.get("pos", Vector2i(-999, -999)))
+	_require(_action_labels_have(overlap_actions, "Train") and _action_labels_have(overlap_actions, "Assign"), "Occupied station menu should allow buying another train and acting on the parked train.")
 	main.selected_train_id = String(main.trains[0]["id"])
 	main._handle_local_click(station_screen)
 	_require(main.selected_train_id == "", "Tapping an occupied station should inspect the station instead of selecting the overlapping train.")
@@ -129,6 +132,13 @@ func _run_productive_output_smoke(main: Node) -> void:
 	main._record_productive_output(12)
 	_require(int(main.local.get("productive_progress", 0)) == 12, "Productive output should count delivered cargo even before the fleet objective is met.")
 	_require(not main._objective_complete(), "Fleet target should remain a separate completion requirement.")
+	main.local["infra_cost"] = 300
+	main.local["elapsed_time"] = 30.0
+	var efficient_reward: int = main._completion_reward_money(main.local["scenario"], 2.0, true)
+	main.local["infra_cost"] = 3000
+	main.local["elapsed_time"] = 400.0
+	var expensive_reward: int = main._completion_reward_money(main.local["scenario"], 2.0, true)
+	_require(efficient_reward > expensive_reward, "Regional money reward should be higher for lower material usage and faster completion.")
 
 func _run_debug_money_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")
@@ -136,22 +146,24 @@ func _run_debug_money_smoke(main: Node) -> void:
 	main._debug_replenish_money()
 	_require(int(main.local["money"]) == before + 5000, "Debug money button should add $5000 to the local budget.")
 
-func _run_money_only_build_smoke(main: Node) -> void:
+func _run_local_material_accounting_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")
 	main.local["money"] = 1000
 	main.local["materials"] = 0
 	_place_path(main, [Vector2i(1, 5), Vector2i(16, 5)])
 	var before_chain_money: int = int(main.local["money"])
+	var before_chain_used: int = int(main.local["infra_cost"])
 	main._place_signal(Vector2i(5, 5), "chain")
-	_require(main.signals.has(Vector2i(5, 5)), "Chain signals should place with money only when materials are zero.")
-	_require(int(main.local["money"]) == before_chain_money - 120, "Chain signal should spend only money.")
-	_require(int(main.local["materials"]) == 0, "Chain signal should not spend materials.")
+	_require(main.signals.has(Vector2i(5, 5)), "Chain signals should place even when local materials are zero.")
+	_require(int(main.local["money"]) == before_chain_money, "Local map construction should not spend money.")
+	_require(int(main.local["infra_cost"]) == before_chain_used + 120, "Chain signal should add to material usage.")
 	var before_platform_money: int = int(main.local["money"])
+	var before_platform_used: int = int(main.local["infra_cost"])
 	var platform_before: int = int(main.station_by_id["interchange"].get("platforms", 1))
 	main._add_platform()
 	_require(int(main.station_by_id["interchange"].get("platforms", 1)) == platform_before + 1, "Platforms should build with money only when materials are zero.")
-	_require(int(main.local["money"]) == before_platform_money - 200, "Platform should spend only money.")
-	_require(int(main.local["materials"]) == 0, "Platform should not spend materials.")
+	_require(int(main.local["money"]) == before_platform_money, "Platform should not spend local money.")
+	_require(int(main.local["infra_cost"]) == before_platform_used + 200, "Platform should add to material usage.")
 
 func _run_diagonal_track_smoke(main: Node) -> void:
 	main.start_scenario("coal_valley")
@@ -512,9 +524,38 @@ func _run_generated_pool_smoke(main: Node) -> void:
 	if river_tile.x > -900:
 		main.local["money"] = 1000
 		var money_before: int = int(main.local["money"])
+		var used_before: int = int(main.local["infra_cost"])
 		main._place_track(river_tile)
 		_require(main.tracks.has(river_tile), "River tiles should allow bridge track.")
-		_require(int(main.local["money"]) == money_before - 85, "River bridge track should cost $85.")
+		_require(int(main.local["money"]) == money_before, "River bridge track should not spend local money.")
+		_require(int(main.local["infra_cost"]) == used_before + 85, "River bridge track should add to material usage.")
+
+func _run_regional_tile_map_smoke(main: Node) -> void:
+	_reset_run_state(main)
+	_require((main.campaign["regional_map"] as Array).size() == main.REGIONAL_GRID.x * main.REGIONAL_GRID.y, "Fresh run should generate a full 9x7 regional tile map.")
+	_require(String(main.campaign.get("regional_position", "")) == main.REGIONAL_START_KEY, "Fresh run should start at the regional start tile.")
+	_require(_regional_contract_tile_count(main) >= main.RUN_LENGTH, "Regional map should contain enough reachable contract tiles for a full run.")
+	var first_map: String = JSON.stringify(main.campaign["regional_map"])
+	_reset_run_state(main)
+	_require(JSON.stringify(main.campaign["regional_map"]) == first_map, "Same regional seed should produce the same regional map.")
+	for id in main.campaign.get("run_available", []):
+		var tile: Dictionary = main._regional_tile_for_scenario(String(id))
+		_require(_regional_key_adjacent(String(main.campaign["regional_position"]), String(tile.get("key", ""))), "Visible run choices should be adjacent to current regional position.")
+	var first_id: String = String((main.campaign["run_available"] as Array)[0])
+	var first_tile: Dictionary = main._regional_tile_for_scenario(first_id)
+	main.start_scenario(first_id)
+	main.local["productive_progress"] = int(main.local["target"])
+	main._complete_scenario()
+	_require(String(main.campaign["regional_position"]) == String(first_tile.get("key", "")), "Completing a contract should move regional position to that tile.")
+	_require((main.campaign["regional_completed_tiles"] as Array).has(String(first_tile.get("key", ""))), "Completed regional tile should be recorded.")
+	main.screen = main.Screen.REGIONAL
+	var money_before: int = int(main.campaign["money"])
+	main.campaign["upgrade_shop"] = ["reward_multiplier", "train_voucher", "material_efficiency"]
+	main._purchase_upgrade("reward_multiplier")
+	_require(int(main.campaign["money"]) == money_before - 260, "Upgrade purchases should spend campaign money.")
+	_require(int((main.campaign["permanent_upgrades"] as Dictionary).get("reward_multiplier", 0)) == 1, "Permanent upgrade should be recorded in permanent upgrades.")
+	main._purchase_upgrade("train_voucher")
+	_require(int((main.campaign["run_upgrades"] as Dictionary).get("train_voucher", 0)) == 1, "Run upgrade should be recorded in run upgrades.")
 
 func _run_generated_contract_play_smoke(main: Node) -> void:
 	for id in ["run_01", "run_02", "run_03", "run_04", "run_05", "run_06"]:
@@ -567,6 +608,10 @@ func _run_reset_progress_smoke(main: Node) -> void:
 	main.campaign["run_step"] = 2
 	main.campaign["run_history"] = [{"id": "run_01"}, {"id": "run_02"}]
 	main.campaign["run_won"] = true
+	main.campaign["permanent_upgrades"] = {"reward_multiplier": 2}
+	main.campaign["run_upgrades"] = {"train_voucher": 1}
+	main.campaign["regional_map"] = [{"key": "old"}]
+	main.campaign["regional_completed_tiles"] = ["0,3", "1,3"]
 	main.campaign["money"] = 9999
 	main.campaign["traffic_load"] = 99
 	main.campaign["traffic_capacity"] = 12
@@ -587,6 +632,8 @@ func _run_reset_progress_smoke(main: Node) -> void:
 	_require((main.campaign["run_history"] as Array).is_empty(), "Reset Progress should clear run history.")
 	_require(int(main.campaign["run_step"]) == 0 and not bool(main.campaign["run_won"]), "Reset Progress should return the run to 0/20 and not won.")
 	_require((main.campaign["run_available"] as Array).size() == main.RUN_CHOICES, "Reset Progress should generate fresh contract choices.")
+	_require((main.campaign["permanent_upgrades"] as Dictionary).is_empty() and (main.campaign["run_upgrades"] as Dictionary).is_empty(), "Reset Progress should clear permanent and run upgrades.")
+	_require((main.campaign["regional_map"] as Array).size() == main.REGIONAL_GRID.x * main.REGIONAL_GRID.y, "Reset Progress should generate a fresh regional tile map.")
 	var traits: Dictionary = main.campaign["regional_traits"]
 	_require(int(traits.get("through_traffic", -1)) == 0 and float(traits.get("reliability", 0.0)) == 1.0, "Reset Progress should restore inherited regional traits.")
 
@@ -741,6 +788,15 @@ func _reset_run_state(main: Node) -> void:
 	main.campaign["traffic_capacity"] = 40
 	main.campaign["completed"] = []
 	main.campaign["run_seed"] = 32027
+	main.campaign["regional_map_seed"] = 32027
+	main.campaign["regional_map"] = []
+	main.campaign["regional_position"] = main.REGIONAL_START_KEY
+	main.campaign["regional_completed_tiles"] = []
+	main.campaign["regional_visible_tiles"] = []
+	main.campaign["active_regional_tile"] = ""
+	main.campaign["permanent_upgrades"] = {}
+	main.campaign["run_upgrades"] = {}
+	main.campaign["upgrade_shop"] = []
 	main.campaign["run_step"] = 0
 	main.campaign["run_completed"] = []
 	main.campaign["run_available"] = []
@@ -851,6 +907,30 @@ func _control_inside_viewport(control: Control, viewport_size: Vector2) -> bool:
 		return false
 	var rect := control.get_global_rect()
 	return rect.position.x >= -0.5 and rect.position.y >= -0.5 and rect.end.x <= viewport_size.x + 0.5 and rect.end.y <= viewport_size.y + 0.5
+
+func _action_labels_have(actions: Array, label: String) -> bool:
+	for action in actions:
+		if String(action.get("label", "")) == label:
+			return true
+	return false
+
+func _regional_contract_tile_count(main: Node) -> int:
+	var count := 0
+	for tile in main.campaign.get("regional_map", []):
+		if String(tile.get("scenario_id", "")) != "":
+			count += 1
+	return count
+
+func _regional_key_adjacent(a_key: String, b_key: String) -> bool:
+	var a := _regional_key_to_pos_for_test(a_key)
+	var b := _regional_key_to_pos_for_test(b_key)
+	return abs(a.x - b.x) + abs(a.y - b.y) == 1
+
+func _regional_key_to_pos_for_test(key: String) -> Vector2i:
+	var parts := key.split(",")
+	if parts.size() != 2:
+		return Vector2i(-999, -999)
+	return Vector2i(int(parts[0]), int(parts[1]))
 
 func _require(condition: bool, message: String) -> void:
 	if not condition:

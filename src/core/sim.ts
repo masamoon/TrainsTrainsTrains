@@ -10,7 +10,7 @@
 import type { Layout } from "./layout";
 import { type Cell, type Dir, type Puzzle, ckey, opp, same, step } from "./puzzle";
 
-export const HOLD_BEATS = 2;
+const HOLD_BEATS = 2;
 
 export type Outcome = "arrived" | "wrong" | "crashed";
 export type EventKind = "arrived" | "wrong" | "crash" | "derail" | "lost";

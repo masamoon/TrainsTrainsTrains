@@ -2,7 +2,7 @@
 
 import { DEPARTURES, dateLabel, generate, msUntilTomorrow, numberLabel, today } from "../core/daily";
 import { Layout, type LayoutData } from "../core/layout";
-import { LEVELS, LINE_NAME, loadLevel } from "../core/levels";
+import { LEVELS, LINES, loadLevel } from "../core/levels";
 import type { Puzzle } from "../core/puzzle";
 import { type Save, shareText } from "../core/save";
 import { type RunResult, run } from "../core/sim";
@@ -31,7 +31,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     h(
       "div",
       { class: "bar-title" },
-      h("div", { class: "eyebrow" }, daily ? `DAILY LINE ${numberLabel(day)}` : `STOP ${index + 1}`),
+      h("div", { class: "eyebrow" }, daily ? `DAILY LINE ${numberLabel(day)}` : `LINE ${LEVELS[index].line + 1} · STOP ${LEVELS[index].stop + 1}`),
       h("h1", {}, daily ? dateLabel(day) : pz.name.toUpperCase()),
     ),
     h("button", { class: "bar-btn bar-right", onclick: clear }, "Clear"),
@@ -40,9 +40,9 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
   // Departures: each depot's trains in order.
   const departures = h(
     "div",
-    { class: "departures", "aria-label": "Departures: " + pz.depots.map((d) => d.trains.map((c) => LIVERY_NAMES[c % 4]).join(", ")).join("; ") },
+    { class: "departures", "aria-label": "Departures: " + pz.depots.map((d) => d.trains.map((c) => LIVERY_NAMES[c % 4] + (d.goods ? " goods" : "")).join(", ")).join("; ") },
     h("span", { class: "eyebrow", "aria-hidden": "true" }, "DEPARTURES"),
-    ...pz.depots.map((dp) => h("div", { class: "chip", "aria-hidden": "true" }, ...dp.trains.map((c) => trainSvg(c, 30)))),
+    ...pz.depots.map((dp) => h("div", { class: "chip", "aria-hidden": "true" }, ...dp.trains.map((c) => trainSvg(c, 30, dp.goods)))),
   );
 
   const trackLabel = h("span", {});
@@ -240,12 +240,18 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     if (s < 3) msg += ` Use ${pz.par} or fewer pieces for three stars.`;
     b.append(h("h2", {}, "ALL TRAINS HOME"), big, h("p", { class: "muted" }, msg));
     let primary: HTMLButtonElement;
+    const line = LINES[LEVELS[index].line];
+    const endOfLine = index + 1 >= LEVELS.length || LEVELS[index + 1].line !== LEVELS[index].line;
     if (index + 1 < LEVELS.length) {
-      primary = h("button", { class: "btn btn-primary btn-wide", onclick: () => go(`#/level/${index + 2}`) }, "NEXT STOP");
+      primary = h("button", { class: "btn btn-primary btn-wide", onclick: () => go(`#/level/${index + 2}`) }, endOfLine ? "NEXT LINE" : "NEXT STOP");
+      if (endOfLine) {
+        const nextLine = LEVELS[index + 1].line;
+        b.append(h("p", { style: "margin:0" }, `That's the whole ${line.name}. Line ${nextLine + 1}, the ${LINES[nextLine].name}, is open.`));
+      }
       b.append(primary);
     } else {
       primary = h("button", { class: "btn btn-primary btn-wide", onclick: () => go("#/map") }, "BACK TO THE MAP");
-      b.append(h("p", { style: "margin:0" }, `That's the whole ${LINE_NAME}. Try today's Daily Line next.`), primary);
+      b.append(h("p", { style: "margin:0" }, `That's the whole ${line.name}, and every line so far. Try today's Daily Line next.`), primary);
     }
     b.append(h("button", { class: "btn btn-ghost", onclick: backToBuilding }, "Improve this stop"));
     primary.focus();

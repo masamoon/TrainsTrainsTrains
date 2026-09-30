@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loadLevel } from "../src/core/levels";
+import { LEVELS, loadLevel } from "../src/core/levels";
 import { drag } from "./helpers";
 
 test("home shows the campaign and today's Daily Line", async ({ page }) => {
@@ -82,4 +82,21 @@ test("test mode can reset today's Daily Line", async ({ page }) => {
   await page.getByRole("button", { name: /Reset today's puzzle/ }).click();
   await expect(page.getByRole("button", { name: "DEPART · 6 LEFT" })).toBeVisible();
   await expect(page.getByText("Track 0 ·")).toBeVisible();
+});
+
+test("the Valley Line follows Line 1, and trains run through a tunnel", async ({ page }) => {
+  const levels: Record<string, unknown> = {};
+  for (const lv of LEVELS) if (lv.line === 0 || lv.id === "2-1" || lv.id === "2-2") levels[lv.id] = { stars: 3 };
+  await page.addInitScript((json) => localStorage.setItem("trainstrains.save.v1", json), JSON.stringify({ levels, daily: {} }));
+  await page.goto("./#/map");
+  await expect(page.getByRole("button", { name: /Line 2, stop 1, Old Main Line, 3 of 3 stars/ })).toBeVisible();
+  await page.getByRole("button", { name: /Line 2, stop 3, Under the Hill, next/ }).click();
+  await expect(page.getByText("LINE 2 · STOP 3")).toBeVisible();
+  const pz = loadLevel(LEVELS.findIndex((lv) => lv.id === "2-3"));
+  // Join the depot to one tunnel stub, and the other stub to the platform.
+  await drag(page, pz, [[2, 1], [2, 2], [3, 2]]);
+  await drag(page, pz, [[3, 5], [4, 5], [5, 5]]);
+  await expect(page.getByText(`Track 6 · par ${pz.par}`)).toBeVisible();
+  await page.getByRole("button", { name: "DEPART" }).click();
+  await expect(page.getByRole("heading", { name: "ALL TRAINS HOME" })).toBeVisible({ timeout: 10_000 });
 });

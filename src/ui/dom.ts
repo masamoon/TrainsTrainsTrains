@@ -18,6 +18,9 @@ export const COLORS = {
   waterDark: "#7fa8b5",
   town: "#c9bfb0",
   townDark: "#a89c8a",
+  hill: "#d3c29c",
+  hillDark: "#b09d74",
+  fixed: "#e1e5dc",
 };
 
 const LIVERIES = ["#d94f70", "#178a83", "#7552c4", "#e07426"];
@@ -73,8 +76,15 @@ export function glyphPath(color: number, cx: number, cy: number, r: number): str
 }
 
 // A train seen from the side of the track: capsule, front window, its shape.
-export function trainSvg(color: number, width = 36): SVGSVGElement {
+// Goods trains are boxy wagons with ribs.
+export function trainSvg(color: number, width = 36, goods = false): SVGSVGElement {
   const hgt = width * 0.5;
+  if (goods) {
+    return svg(`<svg width="${width}" height="${hgt}" viewBox="0 0 40 20" aria-hidden="true">
+    <rect x="0" y="1" width="40" height="18" rx="2.5" fill="${livery(color)}"/>
+    <rect x="5" y="4" width="2.4" height="12" fill="rgba(0,0,0,0.22)"/><rect x="32.6" y="4" width="2.4" height="12" fill="rgba(0,0,0,0.22)"/>
+    <g fill="#fff">${glyphPath(color, 20, 10, 3.6)}</g></svg>`);
+  }
   return svg(`<svg width="${width}" height="${hgt}" viewBox="0 0 40 20" aria-hidden="true">
     <rect x="0" y="1" width="40" height="18" rx="9" fill="${livery(color)}"/>
     <rect x="28" y="5" width="7" height="10" rx="2.5" fill="#fff"/>

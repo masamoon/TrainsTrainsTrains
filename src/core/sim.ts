@@ -1,5 +1,6 @@
 // Runs a puzzle in beats. Every beat each moving train advances one cell.
 //
+// - Goods trains move every other beat.
 // - A train that meets a train standing still (held at a signal, or queued) waits behind it.
 // - Two trains entering the same cell, or passing through each other, crash.
 // - A train that runs off its track derails; one that reaches a platform of another
@@ -23,6 +24,7 @@ export interface TrainFrame {
   out: Dir; // side it will leave by
   state: "moving" | Outcome;
   hold: number;
+  goods: boolean;
 }
 
 export interface SimEvent {
@@ -50,6 +52,8 @@ interface Train {
   in: Dir;
   out: Dir;
   hold: number;
+  rest: number; // beats a goods train still waits before its next move
+  goods: boolean;
   end: Outcome | "";
 }
 
@@ -76,6 +80,8 @@ export function run(pz: Puzzle, lay: Layout): RunResult {
         in: opp(dp.dir),
         out: dp.dir,
         hold: 0,
+        rest: 0,
+        goods: dp.goods,
         end: "",
       });
     });
@@ -102,7 +108,7 @@ export function run(pz: Puzzle, lay: Layout): RunResult {
       // Same positions, headings and holds as an earlier beat: a loop or a deadlock.
       const sig = trains
         .filter((tr) => tr.state === "active")
-        .map((tr) => `${tr.id}:${ckey(tr.pos)},${tr.out},${tr.hold}`)
+        .map((tr) => `${tr.id}:${ckey(tr.pos)},${tr.out},${tr.hold},${tr.rest}`)
         .join(";");
       if (seen.has(sig)) break;
       seen.add(sig);
@@ -143,6 +149,7 @@ function frame(trains: Train[]): TrainFrame[] {
       out: tr.out,
       state: tr.state === "done_now" ? (tr.end as Outcome) : "moving",
       hold: tr.hold,
+      goods: tr.goods,
     }));
 }
 
@@ -151,7 +158,7 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
   for (const tr of trains) {
     if (tr.state !== "active") continue;
     const plan: Plan = { tr, stay: false, to: tr.pos, in: tr.in, out: tr.out, end: "" };
-    if (tr.hold > 0) {
+    if (tr.hold > 0 || tr.rest > 0) {
       plan.stay = true;
     } else {
       const n = step(tr.pos, tr.out);
@@ -163,7 +170,7 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
         const st = pz.stations[si];
         if (st.dir !== entry) plan.end = "derailed";
         else plan.end = st.color === tr.color ? "arrived" : "wrong";
-      } else if (!pz.inside(n) || pz.blocked.has(ckey(n)) || pz.depotIndexAt(n) >= 0) {
+      } else if (pz.solid(n) || pz.depotIndexAt(n) >= 0) {
         plan.end = "derailed";
       } else {
         const exit = lay.exitFor(pz, n, entry, tr.color);
@@ -219,14 +226,16 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
     tr.out = p.out;
     if (p.stay) {
       if (tr.hold > 0) tr.hold -= 1;
+      else if (tr.rest > 0) tr.rest -= 1;
     } else if (crashed.has(i)) {
       finish(tr, "crashed", "crash", t + 1, events);
     } else if (p.end === "derailed") {
       finish(tr, "crashed", "derail", t + 1, events);
     } else if (p.end !== "") {
       finish(tr, p.end, p.end === "crashed" ? "crash" : p.end, t + 1, events);
-    } else if (lay.stops.has(ckey(tr.pos))) {
-      tr.hold = HOLD_BEATS;
+    } else {
+      if (tr.goods) tr.rest = 1;
+      if (lay.stops.has(ckey(tr.pos))) tr.hold = HOLD_BEATS;
     }
   });
 }

@@ -6,7 +6,7 @@ import type { PostHog } from "posthog-js";
 
 // Project API key from the TrainsTrainsTrains PostHog project. It is public by design.
 const POSTHOG_KEY = "";
-const POSTHOG_HOST = "https://us.i.posthog.com";
+const POSTHOG_HOST = "https://eu.i.posthog.com";
 
 type Props = Record<string, string | number | boolean>;
 

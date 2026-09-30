@@ -37,11 +37,16 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Import project
+        run: godot --headless --path "$GITHUB_WORKSPACE" --import --quit
+
+      - name: Run tests
+        run: godot --headless --path "$GITHUB_WORKSPACE" --script res://tests/run_tests.gd
+
       - name: Export web build
         run: |
           rm -rf build/web
           mkdir -p build/web
-          godot --headless --path "$GITHUB_WORKSPACE" --import --quit
           godot --headless --path "$GITHUB_WORKSPACE" --export-release "Web" "build/web/index.html"
           touch build/web/.nojekyll
 

@@ -17,11 +17,16 @@ config/icon="res://icon.svg"
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/size/window_width_override=450
+window/size/window_height_override=800
+window/handheld/orientation=1
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
 [rendering]
+
+environment/defaults/default_clear_color=Color(0.894, 0.906, 0.882, 1)
 
 renderer/rendering_method="mobile"

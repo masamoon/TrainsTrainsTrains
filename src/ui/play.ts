@@ -1,5 +1,6 @@
 // Plays one puzzle: a campaign stop or today's Daily Line.
 
+import { track } from "../analytics";
 import { DEPARTURES, dateLabel, generate, msUntilTomorrow, numberLabel, today } from "../core/daily";
 import { Layout, type LayoutData } from "../core/layout";
 import { LEVELS, LINES, loadLevel } from "../core/levels";
@@ -167,6 +168,13 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     result = run(pz, lay);
     if (daily) {
       save.recordDaily(day, result.outcomes.map((o) => o.result), result.success, lay.trackCount(pz), lay.toData());
+      const d = save.daily(day);
+      track("daily_departure", { day, departure: d.rows.length, solved: result.success });
+      if (save.dailyFinished(day)) {
+        track("daily_finished", { day, solved: d.solved, departures: d.rows.length, track: d.track, par: pz.par, streak: save.dailyStats(day).streak });
+      }
+    } else {
+      track("level_departure", { level: pz.id, success: result.success });
     }
     board.play(result);
     refresh();
@@ -231,6 +239,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
   function showLevelSuccess(): void {
     const n = lay.trackCount(pz);
     const s = pz.starsFor(n);
+    track("level_completed", { level: pz.id, line: LEVELS[index].line + 1, stop: LEVELS[index].stop + 1, stars: s, track: n, par: pz.par, first: save.stars(pz.id) === 0 });
     save.setStars(pz.id, s);
     const b = openOverlay("card", "All trains home");
     b.classList.add("center");
@@ -323,6 +332,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
 
   async function copyResult(): Promise<void> {
     const text = shareText(day, save.daily(day), pz.par);
+    track("result_copied", { day, solved: save.daily(day).solved });
     try {
       await navigator.clipboard.writeText(text);
       toast("Result copied. Paste it anywhere.");

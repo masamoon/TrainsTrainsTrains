@@ -1,4 +1,4 @@
-name: Deploy Godot Web Export
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -13,47 +13,42 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
-    name: Build Web Export
+    name: Test and build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Godot
-        uses: chickensoft-games/setup-godot@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          version: 4.5.1
-          use-dotnet: false
-          include-templates: true
+          node-version: 22
+          cache: npm
 
-      - name: Verify Godot
-        run: godot --version
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - name: Unit tests (rules, every stop, a year of Daily Lines)
+        run: npm test
 
-      - name: Import project
-        run: godot --headless --path "$GITHUB_WORKSPACE" --import --quit
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
 
-      - name: Run tests
-        run: godot --headless --path "$GITHUB_WORKSPACE" --script res://tests/run_tests.gd
+      - name: Browser tests
+        run: npm run test:e2e
 
-      - name: Export web build
-        run: |
-          rm -rf build/web
-          mkdir -p build/web
-          godot --headless --path "$GITHUB_WORKSPACE" --export-release "Web" "build/web/index.html"
-          touch build/web/.nojekyll
+      - name: Build
+        run: npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: build/web
+          path: dist
 
   deploy:
     name: Deploy to GitHub Pages

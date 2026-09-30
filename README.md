@@ -8,25 +8,26 @@ Screenshots are in [docs/screens](docs/screens).
 
 ## Project layout
 
-- `scripts/core`: the game with no UI. `Puzzle` and `Layout` hold a board and the player's track, `Sim` runs it beat by beat, `Levels` has the campaign, `DailyGen` builds the Daily Line from the date, `Save` keeps progress.
-- `scripts/ui`: screens and drawing. Everything is drawn in code from the palette in `Pal.gd`.
-- `tests/run_tests.gd`: rule checks, every campaign level's reference solution, and a year of Daily Line puzzles.
+It is a plain TypeScript web app built with Vite. There is no game engine: the board is drawn on a canvas and the rest is HTML and SVG.
+
+- `src/core`: the game with no UI. `puzzle.ts` and `layout.ts` hold a board and the player's track, `sim.ts` runs it beat by beat, `levels.ts` has the campaign, `daily.ts` builds the Daily Line from the date, `save.ts` keeps progress in local storage.
+- `src/ui`: screens and drawing. `board.ts` draws the board, takes drag input and plays back a run; `home.ts`, `map.ts` and `play.ts` are the screens.
+- `tests/core.test.ts`: rule checks, every campaign stop's reference solution, and more than a year of Daily Line puzzles.
+- `e2e`: browser tests that play a stop and a Daily Line, plus the screenshot script.
 
 ## Running
 
-Open the project in Godot 4.5. To run the tests headless:
+Needs Node 22.
 
 ```
-godot --headless --path . --import --quit
-godot --headless --path . --script res://tests/run_tests.gd
+npm install
+npm run dev        # local server with reload
+npm test           # unit tests
+npm run test:e2e   # browser tests (run `npx playwright install chromium` once first)
+npm run build      # production build in dist/
+npm run screens    # regenerate docs/screens
 ```
 
-To regenerate the screenshots (needs a display, for example `xvfb-run`):
+Every push and pull request runs the tests and the build. Pushes to `main` deploy `dist/` to GitHub Pages.
 
-```
-godot --path . --rendering-method gl_compatibility --resolution 720x1280 --script res://tests/screenshots.gd
-```
-
-Pushes to `main` build the web export and deploy it to GitHub Pages. `scripts/serve_web.py` serves a local web export from `build/web`.
-
-Fonts: Barlow and Barlow Condensed, SIL Open Font License (`assets/fonts/OFL.txt`).
+Fonts: Barlow and Barlow Condensed, SIL Open Font License (`public/fonts/OFL.txt`).

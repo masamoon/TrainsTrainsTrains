@@ -1,4 +1,4 @@
-# Godot 4+ specific ignores
-.godot/
-/android/
-/build/
+node_modules/
+dist/
+test-results/
+playwright-report/

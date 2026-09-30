@@ -43,7 +43,7 @@ interface Profile {
 }
 
 // Early in the week two lines, midweek three, and a sorting switch at the weekend.
-export function profile(day: number): Profile {
+function profile(day: number): Profile {
   switch (dateOf(day).getUTCDay()) {
     case 1:
     case 2:
@@ -57,7 +57,7 @@ export function profile(day: number): Profile {
 }
 
 // Small, fast, seedable PRNG (mulberry32).
-export class Rng {
+class Rng {
   private s: number;
   constructor(seed: number) {
     this.s = seed >>> 0;

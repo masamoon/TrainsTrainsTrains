@@ -17,12 +17,12 @@ Everything is drawn in code (no raster art), so it stays crisp at any size.
 | Enamel blue | `#1F4F8F` | primary action (Depart, Continue) |
 | Ticket | `#F1E2B6` | Daily Line card |
 | Lamp green / amber / red | `#2F9A4C` / `#E9A21C` / `#D8432E` | arrived / wrong platform / crashed |
-| Lit route | `#FFF4CF` | route ahead of a moving train |
+| Lit | `#FFF4CF` | switch lever lamp, depot arrow, text on dark buttons |
 
 Train liveries always pair a colour with a shape, so the game reads without colour:
 Rose `#D94F70` circle, Teal `#178A83` triangle, Violet `#7552C4` square, Tangerine `#E07426` diamond.
 
-Type: Barlow Condensed Bold for titles, station boards and ticket numbers; Barlow for everything else (both SIL OFL, in `assets/fonts`).
+Type: Barlow Condensed Bold for titles, station boards and ticket numbers; Barlow for everything else (both SIL OFL, in `public/fonts`).
 
 ## Core puzzle
 

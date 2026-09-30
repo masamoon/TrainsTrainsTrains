@@ -50,7 +50,7 @@ export function homeScreen(save: Save): Screen {
   return { el };
 }
 
-export function showHelp(): void {
+function showHelp(): void {
   const o = overlay();
   const lines = [
     "Drag across squares to lay track from each depot to the platform of the same colour and shape.",

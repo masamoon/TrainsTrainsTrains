@@ -55,7 +55,7 @@ export const same = (a: Cell, b: Cell): boolean => a.x === b.x && a.y === b.y;
 export const vec = (d: Dir): [number, number] => VECS[d];
 export const opp = (d: Dir): Dir => ((d + 2) % 4) as Dir;
 export const step = (c: Cell, d: Dir): Cell => ({ x: c.x + VECS[d][0], y: c.y + VECS[d][1] });
-export const dirChar = (s: string): Dir => DIR_CHARS.indexOf(s) as Dir;
+const dirChar = (s: string): Dir => DIR_CHARS.indexOf(s) as Dir;
 
 export function dirBetween(a: Cell, b: Cell): Dir | -1 {
   for (const d of DIRS) if (a.x + VECS[d][0] === b.x && a.y + VECS[d][1] === b.y) return d;

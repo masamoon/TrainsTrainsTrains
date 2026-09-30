@@ -20,7 +20,7 @@ export const COLORS = {
   townDark: "#a89c8a",
 };
 
-export const LIVERIES = ["#d94f70", "#178a83", "#7552c4", "#e07426"];
+const LIVERIES = ["#d94f70", "#178a83", "#7552c4", "#e07426"];
 export const LIVERY_NAMES = ["Rose", "Teal", "Violet", "Tangerine"];
 export const livery = (c: number): string => LIVERIES[c % LIVERIES.length];
 

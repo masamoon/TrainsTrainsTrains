@@ -22,7 +22,7 @@ export interface Cell {
   y: number;
 }
 
-export type Obstacle = "woods" | "water" | "town";
+export type Obstacle = "woods" | "water" | "town" | "hill";
 
 export interface Depot {
   pos: Cell;
@@ -30,12 +30,21 @@ export interface Depot {
   trains: number[]; // colours, in departure order
   start: number;
   every: number;
+  goods: boolean; // goods trains move every other beat
 }
 
 export interface Station {
   pos: Cell;
   dir: Dir; // side facing its track
   color: number;
+}
+
+// A tunnel runs straight under blocked ground between two mouths. Its track is part of
+// the board: the square outside each mouth gets a stub for the player to join.
+export interface Tunnel {
+  a: Cell; // mouth cells, both blocked
+  b: Cell;
+  cells: Cell[]; // every cell from mouth a to mouth b
 }
 
 export interface Solution {
@@ -86,8 +95,12 @@ export interface LevelData {
   id?: string;
   name?: string;
   rows: string[];
-  depots: { at: [number, number]; dir: string; trains: number[]; start?: number; every?: number }[];
+  depots: { at: [number, number]; dir: string; trains: number[]; start?: number; every?: number; goods?: boolean }[];
   stations: { at: [number, number]; dir: string; color: number }[];
+  // Track already laid when the level opens: it can be built onto but not erased.
+  fixed?: [number, number][][];
+  // Tunnel mouths, in pairs on the same row or column.
+  tunnels?: [[number, number], [number, number]][];
   allowStop?: boolean;
   allowLamp?: boolean;
   introTitle?: string;
@@ -109,6 +122,8 @@ export class Puzzle {
   blocked = new Map<string, Obstacle>();
   depots: Depot[] = [];
   stations: Station[] = [];
+  fixed: Cell[][] = [];
+  tunnels: Tunnel[] = [];
   par = 0;
   allowStop = false;
   allowLamp = false;
@@ -116,16 +131,48 @@ export class Puzzle {
   introText = "";
   solution: Solution = { paths: [], stops: [], lamps: [], levers: [] };
   private staticEdgeSet = new Set<string>();
+  private fixedEdgeSet = new Set<string>();
+  private tunnelCellSet = new Set<string>();
 
-  // Call after changing depots or stations.
+  // Call after changing depots, stations, fixed track or tunnels.
   rebuild(): void {
     this.staticEdgeSet.clear();
+    this.fixedEdgeSet.clear();
+    this.tunnelCellSet.clear();
     for (const dp of this.depots) this.staticEdgeSet.add(edgeKey(dp.pos, dp.dir));
     for (const st of this.stations) this.staticEdgeSet.add(edgeKey(st.pos, st.dir));
+    for (const path of this.fixed) {
+      for (let i = 0; i < path.length - 1; i++) {
+        const d = dirBetween(path[i], path[i + 1]);
+        if (d === -1) throw new Error(`fixed track is not continuous at ${ckey(path[i])}`);
+        this.staticEdgeSet.add(edgeKey(path[i], d));
+        this.fixedEdgeSet.add(edgeKey(path[i], d));
+      }
+    }
+    for (const tn of this.tunnels) {
+      const d = dirBetween(tn.cells[0], tn.cells[1]) as Dir;
+      const run = [step(tn.a, opp(d)), ...tn.cells, step(tn.b, d)];
+      for (let i = 0; i < run.length - 1; i++) this.staticEdgeSet.add(edgeKey(run[i], d));
+      for (const c of tn.cells) this.tunnelCellSet.add(ckey(c));
+    }
   }
 
   staticEdges(): Set<string> {
     return this.staticEdgeSet;
+  }
+
+  // Edges of track that came with the level (not depot or platform stubs).
+  fixedEdges(): Set<string> {
+    return this.fixedEdgeSet;
+  }
+
+  inTunnel(p: Cell): boolean {
+    return this.tunnelCellSet.has(ckey(p));
+  }
+
+  // True where a train cannot go: off the board, or blocked ground with no tunnel.
+  solid(p: Cell): boolean {
+    return !this.inside(p) || (this.blocked.has(ckey(p)) && !this.tunnelCellSet.has(ckey(p)));
   }
 
   inside(p: Cell): boolean {
@@ -176,14 +223,14 @@ export class Puzzle {
   }
 
   // Builds a puzzle from compact level data. `rows` uses "." for open ground, "T" woods,
-  // "~" water and "H" town.
+  // "~" water, "H" town and "^" hills.
   static fromData(data: LevelData): Puzzle {
     const pz = new Puzzle();
     pz.id = data.id ?? "";
     pz.name = data.name ?? "";
     pz.h = data.rows.length;
     pz.w = data.rows[0].length;
-    const kinds: Record<string, Obstacle> = { T: "woods", "~": "water", H: "town" };
+    const kinds: Record<string, Obstacle> = { T: "woods", "~": "water", H: "town", "^": "hill" };
     data.rows.forEach((row, y) => {
       [...row].forEach((ch, x) => {
         if (kinds[ch]) pz.blocked.set(`${x},${y}`, kinds[ch]);
@@ -195,8 +242,11 @@ export class Puzzle {
       trains: [...d.trains],
       start: d.start ?? 0,
       every: d.every ?? 3,
+      goods: d.goods ?? false,
     }));
     pz.stations = data.stations.map((s) => ({ pos: cell(s.at[0], s.at[1]), dir: dirChar(s.dir), color: s.color }));
+    pz.fixed = (data.fixed ?? []).map((p) => p.map(([x, y]) => cell(x, y)));
+    pz.tunnels = (data.tunnels ?? []).map(([[ax, ay], [bx, by]]) => tunnel(pz, cell(ax, ay), cell(bx, by)));
     pz.allowStop = data.allowStop ?? false;
     pz.allowLamp = data.allowLamp ?? false;
     pz.introTitle = data.introTitle ?? "";
@@ -215,4 +265,18 @@ export class Puzzle {
     if (pz.par <= 0) pz.par = pz.solutionLayout().trackCount(pz);
     return pz;
   }
+}
+
+// The cells of a tunnel between two mouths, checked: straight, all blocked, with open
+// ground outside both mouths.
+export function tunnel(pz: Puzzle, a: Cell, b: Cell): Tunnel {
+  if (a.x !== b.x && a.y !== b.y) throw new Error(`tunnel ${ckey(a)} to ${ckey(b)} is not straight`);
+  const d = dirBetween(a, { x: a.x + Math.sign(b.x - a.x), y: a.y + Math.sign(b.y - a.y) }) as Dir;
+  const cells: Cell[] = [a];
+  while (!same(cells[cells.length - 1], b)) cells.push(step(cells[cells.length - 1], d));
+  if (cells.length < 2 || cells.some((c) => !pz.blocked.has(ckey(c)))) throw new Error(`tunnel ${ckey(a)} must run under blocked ground`);
+  for (const out of [step(a, opp(d)), step(b, d)]) {
+    if (!pz.inside(out) || pz.blocked.has(ckey(out))) throw new Error(`tunnel mouth at ${ckey(out)} opens onto blocked ground`);
+  }
+  return { a, b, cells };
 }

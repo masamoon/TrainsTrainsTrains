@@ -2,7 +2,25 @@
 // back a simulation run.
 
 import { Layout, type LayoutData } from "../core/layout";
-import { type Cell, type Depot, type Dir, E, N, type Puzzle, S, type Station, W, ckey, edgeCells, opp, parseCell, same, vec } from "../core/puzzle";
+import {
+  type Cell,
+  type Depot,
+  type Dir,
+  E,
+  N,
+  type Puzzle,
+  S,
+  type Station,
+  type Tunnel,
+  W,
+  ckey,
+  dirBetween,
+  edgeCells,
+  opp,
+  parseCell,
+  same,
+  vec,
+} from "../core/puzzle";
 import type { RunResult, SimEvent, TrainFrame } from "../core/sim";
 import { COLORS, glyphPath, livery, outcomeColor } from "./dom";
 
@@ -174,6 +192,7 @@ export class Board {
       else if (pz.buildable(p) && dirs.length === 2) this.onHint("Tap a switch to flip it. Join three sides of a square to make one.");
     } else if (this.tool === "erase") {
       this.changed = lay.clearCell(pz, p);
+      if (!this.changed && this.isFixed(p)) this.onHint("Shaded track came with the line. It can't be erased.");
     } else if (pz.buildable(p)) {
       if (dirs.length === 2) {
         if (!pz.allowStop) this.onHint("Stop signals open at stop 5.");
@@ -259,12 +278,17 @@ export class Board {
       }
     }
     for (const [k, kind] of pz.blocked) this.drawObstacle(parseCell(k), kind);
+    for (const k of this.fixedCells()) {
+      const p = parseCell(k);
+      this.rrect(this.origin.x + p.x * cs + 1.5, this.origin.y + p.y * cs + 1.5, cs - 3, cs - 3, cs * 0.14, COLORS.fixed);
+    }
     if (this.pressing && this.editable && pz.inside(this.lastCell)) {
       const x = this.origin.x + this.lastCell.x * cs;
       const y = this.origin.y + this.lastCell.y * cs;
       this.rrect(x + 2, y + 2, cs - 4, cs - 4, cs * 0.16, "rgba(31,79,143,0.08)", "rgba(31,79,143,0.4)", 2);
     }
     this.drawTrack();
+    for (const tn of pz.tunnels) this.drawTunnel(tn);
     pz.depots.forEach((dp, i) => this.drawDepot(dp, i));
     for (const st of pz.stations) this.drawStation(st);
     this.drawSignals();
@@ -322,6 +346,19 @@ export class Board {
         }
         ctx.stroke();
       }
+    } else if (kind === "hill") {
+      this.rrect(x, y, s, s, cs * 0.16, COLORS.hill);
+      // Two peaks, alternating which is taller.
+      const peaks: [number, number, number][] = variant === 1 ? [[-0.16, 0.3, 0.2], [0.18, 0.4, 0.17]] : [[-0.18, 0.4, 0.17], [0.16, 0.3, 0.2]];
+      ctx.fillStyle = COLORS.hillDark;
+      for (const [dx, hgt, half] of peaks) {
+        ctx.beginPath();
+        ctx.moveTo(c.x + (dx - half) * cs, c.y + 0.26 * cs);
+        ctx.lineTo(c.x + dx * cs, c.y + (0.26 - hgt) * cs);
+        ctx.lineTo(c.x + (dx + half) * cs, c.y + 0.26 * cs);
+        ctx.closePath();
+        ctx.fill();
+      }
     } else {
       this.rrect(x, y, s, s, cs * 0.16, COLORS.town);
       const bx = c.x;
@@ -368,7 +405,7 @@ export class Board {
     const cells = new Map<string, Cell>();
     for (const key of [...lay.edges, ...pz.staticEdges()]) for (const c of edgeCells(key)) cells.set(ckey(c), c);
     for (const p of cells.values()) {
-      if (!pz.inside(p)) continue;
+      if (!pz.inside(p) || pz.inTunnel(p)) continue;
       const di = pz.depotIndexAt(p);
       const si = pz.stationIndexAt(p);
       if (di >= 0 || si >= 0) {
@@ -428,6 +465,56 @@ export class Board {
     }
   }
 
+  private fixedCells(): Set<string> {
+    const cells = new Set<string>();
+    for (const key of this.pz.fixedEdges()) for (const c of edgeCells(key)) if (this.pz.buildable(c)) cells.add(ckey(c));
+    return cells;
+  }
+
+  private isFixed(p: Cell): boolean {
+    return this.fixedCells().has(ckey(p));
+  }
+
+  // A tunnel shows as a dashed line under the hills, with a portal at each mouth,
+  // the way a signal-box diagram draws one.
+  private drawTunnel(tn: Tunnel): void {
+    const { ctx } = this;
+    const cs = this.cellSize;
+    const d = dirBetween(tn.cells[0], tn.cells[1]) as Dir;
+    const a = this.sideMid(tn.a, opp(d));
+    const b = this.sideMid(tn.b, d);
+    ctx.save();
+    ctx.strokeStyle = COLORS.ink;
+    ctx.lineWidth = cs * 0.12;
+    ctx.lineCap = "butt";
+    ctx.setLineDash([cs * 0.16, cs * 0.12]);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.restore();
+    for (const [mouth, out] of [[tn.a, opp(d)], [tn.b, d]] as [Cell, Dir][]) {
+      const m = this.sideMid(mouth, out);
+      const [ox, oy] = vec(out);
+      const angle = Math.atan2(oy, ox);
+      // Portal: a dark arch facing out of the hill, with the track running into it.
+      ctx.save();
+      ctx.translate(m.x - ox * cs * 0.02, m.y - oy * cs * 0.02);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(0, -cs * 0.3);
+      ctx.lineTo(0, cs * 0.3);
+      ctx.lineTo(-cs * 0.14, cs * 0.3);
+      ctx.arc(-cs * 0.14, 0, cs * 0.3, Math.PI / 2, -Math.PI / 2, false);
+      ctx.closePath();
+      ctx.fillStyle = COLORS.bezel;
+      ctx.fill();
+      ctx.fillStyle = COLORS.ink;
+      ctx.fillRect(-cs * 0.2, -cs * 0.1, cs * 0.2 + 0.75, cs * 0.2);
+      ctx.restore();
+    }
+  }
+
   private drawDepot(dp: Depot, index: number): void {
     const { ctx } = this;
     const cs = this.cellSize;
@@ -450,7 +537,10 @@ export class Board {
     const waiting = this.waitingAt(index);
     waiting.forEach((color, i) => {
       const o = (i - (waiting.length - 1) / 2) * cs * 0.13;
-      this.circle({ x: c.x - fx * cs * 0.26 + sx * o, y: c.y - fy * cs * 0.26 + sy * o }, cs * 0.055, livery(color));
+      const at = { x: c.x - fx * cs * 0.26 + sx * o, y: c.y - fy * cs * 0.26 + sy * o };
+      // Goods trains wait as small squares, passenger trains as dots.
+      if (dp.goods) this.rrect(at.x - cs * 0.05, at.y - cs * 0.05, cs * 0.1, cs * 0.1, cs * 0.015, livery(color));
+      else this.circle(at, cs * 0.055, livery(color));
     });
   }
 
@@ -551,7 +641,7 @@ export class Board {
           if (tn.state !== "moving") alpha = Math.max(0, 1 - (t - 1) * 1.6);
         }
       }
-      this.drawTrain(pos, Math.atan2(ahead.y - pos.y, ahead.x - pos.x), len, tr.color, alpha);
+      this.drawTrain(pos, Math.atan2(ahead.y - pos.y, ahead.x - pos.x), len, tr.color, alpha * this.coverAt(pos), tr.goods);
     }
     // Trains that appear this beat roll out of their depot.
     const hereIds = new Set(here.map((t) => t.id));
@@ -559,12 +649,18 @@ export class Board {
       for (const tr of next) {
         if (hereIds.has(tr.id) || tr.state !== "moving") continue;
         const [dx, dy] = vec(tr.out);
-        this.drawTrain(this.pathPoint(tr.pos, tr.in, tr.out, 0.5), Math.atan2(dy, dx), len * (0.4 + 0.6 * f), tr.color, f);
+        this.drawTrain(this.pathPoint(tr.pos, tr.in, tr.out, 0.5), Math.atan2(dy, dx), len * (0.4 + 0.6 * f), tr.color, f, tr.goods);
       }
     }
   }
 
-  private drawTrain(c: Pt, angle: number, length: number, color: number, alpha: number): void {
+  // Trains under a hill show faintly, like an occupied section lamp.
+  private coverAt(p: Pt): number {
+    const cell = { x: Math.floor((p.x - this.origin.x) / this.cellSize), y: Math.floor((p.y - this.origin.y) / this.cellSize) };
+    return this.pz.inTunnel(cell) ? 0.28 : 1;
+  }
+
+  private drawTrain(c: Pt, angle: number, length: number, color: number, alpha: number, goods = false): void {
     const { ctx } = this;
     const thick = length * 0.5;
     ctx.save();
@@ -572,16 +668,27 @@ export class Board {
     ctx.translate(c.x, c.y);
     ctx.rotate(angle);
     ctx.beginPath();
-    ctx.roundRect(-length / 2, -thick / 2, length, thick, thick / 2);
-    ctx.fillStyle = livery(color);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.roundRect(length / 2 - thick * 0.72, -thick * 0.28, thick * 0.4, thick * 0.56, thick * 0.14);
-    ctx.fillStyle = "#fff";
-    ctx.fill();
+    if (goods) {
+      // A boxy wagon with ribs instead of a rounded nose and window.
+      ctx.roundRect(-length / 2, -thick / 2, length, thick, thick * 0.14);
+      ctx.fillStyle = livery(color);
+      ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      for (const rx of [-0.36, 0.3]) ctx.fillRect(length * rx, -thick * 0.36, thick * 0.12, thick * 0.72);
+      ctx.fillStyle = "#fff";
+    } else {
+      ctx.roundRect(-length / 2, -thick / 2, length, thick, thick / 2);
+      ctx.fillStyle = livery(color);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(length / 2 - thick * 0.72, -thick * 0.28, thick * 0.4, thick * 0.56, thick * 0.14);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+    }
     ctx.rotate(-angle);
-    const gx = Math.cos(angle) * -length * 0.14;
-    const gy = Math.sin(angle) * -length * 0.14;
+    const shift = goods ? 0 : -length * 0.14;
+    const gx = Math.cos(angle) * shift;
+    const gy = Math.sin(angle) * shift;
     ctx.fill(new Path2D(glyphToPath(color, gx, gy, thick * 0.2)));
     ctx.restore();
   }

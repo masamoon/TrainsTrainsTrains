@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { dateLabel, generate, today } from "../src/core/daily";
 import { Layout } from "../src/core/layout";
 import { LEVELS, loadLevel } from "../src/core/levels";
-import { type LevelData, Puzzle, W, cell } from "../src/core/puzzle";
+import { type LevelData, Puzzle, W, cell, edgeCells } from "../src/core/puzzle";
 import { Save, shareText } from "../src/core/save";
 import { run } from "../src/core/sim";
 
-function puzzle(rows: string[], depots: LevelData["depots"], stations: LevelData["stations"]): Puzzle {
-  return Puzzle.fromData({ rows, depots, stations, par: 1 });
+function puzzle(rows: string[], depots: LevelData["depots"], stations: LevelData["stations"], extra: Partial<LevelData> = {}): Puzzle {
+  return Puzzle.fromData({ rows, depots, stations, par: 1, ...extra });
 }
 
 function draw(pz: Puzzle, lay: Layout, cells: [number, number][]): void {
@@ -98,11 +98,72 @@ describe("rules", () => {
   });
 });
 
+describe("tunnels, existing track and goods trains", () => {
+  // A ridge of hills with a tunnel through the middle row.
+  const ridge = (depots: LevelData["depots"]) =>
+    puzzle([".......", "..^^^..", "......."], depots, [{ at: [6, 1], dir: "W", color: 0 }], { tunnels: [[[2, 1], [4, 1]]] });
+
+  it("runs trains straight through a tunnel", () => {
+    const pz = ridge([{ at: [0, 1], dir: "E", trains: [0, 0] }]);
+    // Depot and platform sit right outside the mouths, so no track is needed.
+    const res = run(pz, new Layout());
+    expect(res.success).toBe(true);
+    expect(res.frames.some((f) => f.some((t) => pz.inTunnel(t.pos)))).toBe(true);
+  });
+
+  it("won't take track on tunnel cells and crashes trains meeting inside", () => {
+    const pz = ridge([
+      { at: [0, 1], dir: "E", trains: [0] },
+      { at: [5, 0], dir: "S", trains: [1] },
+    ]);
+    const lay = new Layout();
+    expect(lay.connect(pz, cell(2, 1), cell(2, 0))).toBe(false);
+    // The teal train comes down beside the east mouth and is switched west into the tunnel.
+    lay.levers.set("5,1", W);
+    const res = run(pz, lay);
+    const crash = res.events.find((e) => e.kind === "crash");
+    expect(crash && pz.inTunnel(crash.pos)).toBe(true);
+  });
+
+  it("rejects a tunnel that isn't under blocked ground", () => {
+    expect(() => puzzle(["....."], [], [], { tunnels: [[[1, 0], [3, 0]]] })).toThrow();
+  });
+
+  it("moves goods trains every other beat", () => {
+    const line = (goods: boolean) => puzzle(["......"], [{ at: [0, 0], dir: "E", trains: [0], goods }], [{ at: [5, 0], dir: "W", color: 0 }]);
+    const fast = line(false);
+    const slow = line(true);
+    const lay = new Layout();
+    draw(fast, lay, [[1, 0], [2, 0], [3, 0], [4, 0]]);
+    expect(run(fast, lay).beats).toBe(5);
+    const res = run(slow, lay);
+    expect(res.success).toBe(true);
+    expect(res.beats).toBe(9);
+  });
+
+  it("builds onto existing track without counting or erasing it", () => {
+    const pz = puzzle(
+      [".....", "....."],
+      [{ at: [0, 0], dir: "E", trains: [0] }],
+      [{ at: [4, 1], dir: "W", color: 0 }],
+      { fixed: [[[0, 0], [1, 0], [2, 0]]] },
+    );
+    const lay = new Layout();
+    draw(pz, lay, [[2, 0], [3, 0], [3, 1]]);
+    expect(lay.trackCount(pz)).toBe(3); // (2,0) gained a piece; (1,0) is untouched
+    expect(lay.clearCell(pz, cell(1, 0))).toBe(false);
+    expect(lay.dirsAt(pz, cell(1, 0)).length).toBe(2);
+    expect(run(pz, lay).success).toBe(true);
+  });
+});
+
 describe("campaign", () => {
   LEVELS.forEach((data, i) => {
     it(`${data.id} ${data.name}: reference solution solves for three stars`, () => {
       const pz = loadLevel(i);
       const lay = pz.solutionLayout();
+      // Every piece of the reference solution is one a player could draw.
+      for (const key of lay.edges) for (const c of edgeCells(key)) expect(pz.buildable(c), `${data.id} ${key}`).toBe(true);
       const res = run(pz, lay);
       expect(res.outcomes).toEqual(res.outcomes.map((o) => ({ ...o, result: "arrived" })));
       expect(pz.starsFor(lay.trackCount(pz))).toBe(3);
@@ -113,6 +174,12 @@ describe("campaign", () => {
         expect(run(pz, bare).success).toBe(false);
       }
     });
+  });
+});
+
+describe("lines", () => {
+  it("gives every stop a unique id", () => {
+    expect(new Set(LEVELS.map((lv) => lv.id)).size).toBe(LEVELS.length);
   });
 });
 

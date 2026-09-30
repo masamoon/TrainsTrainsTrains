@@ -1,7 +1,7 @@
 // Home: the wordmark, the campaign card and today's Daily Line ticket.
 
 import { DEPARTURES, dateLabel, numberLabel, today } from "../core/daily";
-import { LEVELS, LINE_NAME } from "../core/levels";
+import { LEVELS, LINES } from "../core/levels";
 import type { Save } from "../core/save";
 import { COLORS, h, livery, overlay, svg, trainSvg } from "./dom";
 import { type Screen, go } from "./nav";
@@ -14,12 +14,13 @@ export function homeScreen(save: Save): Screen {
   );
 
   const next = save.nextLevelIndex();
+  const line = LEVELS[Math.min(next, LEVELS.length - 1)].line;
   const campaign = h(
     "section",
     { class: "card" },
     h("div", { class: "card-head" }, h("span", { class: "eyebrow" }, "CAMPAIGN"), h("span", { style: "font-weight:600" }, `${save.totalStars()} of ${LEVELS.length * 3} stars`)),
-    h("h2", {}, `LINE 1 · ${LINE_NAME.toUpperCase()}`),
-    progress(next),
+    h("h2", {}, `LINE ${line + 1} · ${LINES[line].name.toUpperCase()}`),
+    progress(line, next),
     h("p", { class: "muted" }, next >= LEVELS.length ? "Every stop cleared. Replay any stop for more stars." : `Next stop: ${LEVELS[next].name}`),
     h("button", { class: "btn btn-primary btn-wide", onclick: () => go("#/map") }, next > 0 ? "CONTINUE" : "START"),
   );
@@ -58,6 +59,7 @@ function showHelp(): void {
     "Signal adds a stop signal to a straight or curve (a train holds two beats), or a colour lamp to a switch (that colour follows the lever, others take the other branch).",
     "Press Depart. Trains move one square per beat. Two trains in one square crash.",
     "Use no more track than par for three stars.",
+    "Later lines add shaded track that is already laid, tunnels under the hills, and slow goods trains that move every other beat.",
   ];
   o.body.setAttribute("aria-label", "How to play");
   o.body.append(
@@ -68,14 +70,16 @@ function showHelp(): void {
   o.body.querySelector("button")?.focus();
 }
 
-// Campaign progress as a short line of stops.
-function progress(reached: number): SVGSVGElement {
-  const n = LEVELS.length;
+// Progress along one line as a short row of stops.
+function progress(lineIndex: number, next: number): SVGSVGElement {
+  const n = LINES[lineIndex].stops.length;
+  const first = LEVELS.findIndex((lv) => lv.line === lineIndex);
+  const reached = Math.max(0, next - first);
   const w = 320;
   const y = 12;
   const stepX = (w - 24) / (n - 1);
   const cut = 12 + stepX * Math.min(reached, n - 1);
-  const line = livery(0);
+  const line = livery(LINES[lineIndex].color);
   let body = `<line x1="12" y1="${y}" x2="${cut}" y2="${y}" stroke="${line}" stroke-width="6" stroke-linecap="round"/>`;
   if (cut < w - 12) body += `<line x1="${cut}" y1="${y}" x2="${w - 12}" y2="${y}" stroke="${COLORS.dot}" stroke-width="5" stroke-dasharray="3 7" stroke-linecap="round"/>`;
   for (let i = 0; i < n; i++) {

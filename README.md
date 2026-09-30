@@ -3,6 +3,10 @@
 A small puzzle game about drawing track and setting signals so every train reaches the platform of its own colour.
 Play the campaign stop by stop, or the Daily Line: one shared puzzle a day with six departures and a result you can share.
 
+**Play it:** https://masamoon.github.io/TrainsTrainsTrains/
+
+**Test mode:** https://masamoon.github.io/TrainsTrainsTrains/?test#/daily adds a "Reset today's puzzle" button to the Daily Line, so you can play today's puzzle again as often as you like. Resetting clears only today's departures; streaks and other days are kept.
+
 The design direction (identity, rules, campaign and daily structure) is in [docs/DESIGN.md](docs/DESIGN.md).
 Screenshots are in [docs/screens](docs/screens).
 

@@ -107,6 +107,12 @@ export class Save {
     this.write();
   }
 
+  // Test mode only: forget one day's departures so it can be played again.
+  resetDaily(day: number): void {
+    delete this.data.daily[day];
+    this.write();
+  }
+
   dailyFinished(day: number): boolean {
     const d = this.daily(day);
     return d.solved || d.rows.length >= DEPARTURES;

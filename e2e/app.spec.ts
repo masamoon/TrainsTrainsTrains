@@ -65,3 +65,21 @@ test("the Daily Line counts departures and ends with a shareable result", async 
   await page.getByRole("button", { name: "Show a solution" }).click();
   await expect(page.getByRole("button", { name: "NO DEPARTURES LEFT" })).toBeDisabled();
 });
+
+test("test mode can reset today's Daily Line", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("./#/daily");
+  await expect(page.getByRole("button", { name: /Reset today's puzzle/ })).toHaveCount(0);
+  await page.goto("./?test#/daily");
+  const box = (await page.locator(".board-wrap canvas").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 10, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.getByRole("button", { name: "DEPART · 6 LEFT" }).click();
+  await page.getByRole("button", { name: "KEEP BUILDING" }).click({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "DEPART · 5 LEFT" })).toBeVisible();
+  await page.getByRole("button", { name: /Reset today's puzzle/ }).click();
+  await expect(page.getByRole("button", { name: "DEPART · 6 LEFT" })).toBeVisible();
+  await expect(page.getByText("Track 0 ·")).toBeVisible();
+});

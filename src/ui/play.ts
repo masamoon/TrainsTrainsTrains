@@ -72,7 +72,10 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
   const departBtn = h("button", { class: "btn btn-primary btn-wide", style: "min-height:58px;font-size:26px", onclick: depart }, "DEPART");
 
   const boardWrap = h("div", { class: "board-wrap" }, board.canvas);
-  const body = h("div", { class: "col play-body" }, departures, boardWrap, status, info, toolRow, departBtn);
+  // Test mode (?test in the URL) adds a way to replay today's Daily Line.
+  const testMode = new URLSearchParams(location.search).has("test");
+  const resetBtn = daily && testMode ? h("button", { class: "btn btn-ghost", onclick: resetToday }, "Reset today's puzzle (test mode)") : null;
+  const body = h("div", { class: "col play-body" }, departures, boardWrap, status, info, toolRow, departBtn, resetBtn);
   const el = h("main", { class: "screen" }, bar, body);
 
   board.onEdit = (before) => {
@@ -294,6 +297,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
       );
     }
     b.append(h("button", { class: "btn btn-ghost", onclick: backToBuilding }, "Look at the board"));
+    if (testMode) b.append(h("button", { class: "btn btn-ghost", onclick: resetToday }, "Reset today's puzzle (test mode)"));
     const countdown = h("p", { class: "muted center", "aria-live": "off" });
     b.append(countdown);
     const tick = () => {
@@ -304,6 +308,11 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     tick();
     countdownTimer = window.setInterval(tick, 1000);
     if (focus) copy.focus();
+  }
+
+  function resetToday(): void {
+    save.resetDaily(day);
+    go("#/daily");
   }
 
   async function copyResult(): Promise<void> {

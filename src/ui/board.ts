@@ -244,7 +244,9 @@ export class Board {
 
   private tick(now: number): void {
     if (!this.result) return;
-    this.clock = ((now - this.startedAt) / 1000) * (this.fast ? 2.5 : 1);
+    // The first frame's timestamp can come from just before play() was called; a negative
+    // clock would index frame -1 and stop playback for good.
+    this.clock = Math.max(0, ((now - this.startedAt) / 1000) * (this.fast ? 2.5 : 1));
     const beats = this.result.frames.length - 1;
     const beat = Math.floor((this.clock * 1000) / BEAT_MS);
     while (this.fired < Math.min(beat, beats)) {
@@ -612,7 +614,7 @@ export class Board {
 
   private drawTrains(): void {
     const frames = this.result!.frames;
-    const k = Math.min(Math.floor((this.clock * 1000) / BEAT_MS), frames.length - 1);
+    const k = Math.max(0, Math.min(Math.floor((this.clock * 1000) / BEAT_MS), frames.length - 1));
     const f = Math.min(Math.max((this.clock * 1000) / BEAT_MS - k, 0), 1);
     const here = frames[k];
     const next = frames[Math.min(k + 1, frames.length - 1)];

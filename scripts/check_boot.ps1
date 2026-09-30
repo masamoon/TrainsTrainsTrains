@@ -25,7 +25,7 @@ function Find-Godot {
 
 $godot = Find-Godot $GodotBin
 Write-Host "Using Godot: $godot"
-& $godot --headless --path $repoRoot --script "res://scripts/SmokeTest.gd"
+& $godot --headless --path $repoRoot --script "res://tests/run_tests.gd"
 if ($LASTEXITCODE -ne 0) {
 	exit $LASTEXITCODE
 }

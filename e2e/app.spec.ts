@@ -29,6 +29,13 @@ test("a first stop can be drawn and solved for three stars", async ({ page }) =>
   await expect(page.getByRole("button", { name: /Stop 1, First Light, 3 of 3 stars/ })).toBeVisible();
 });
 
+test("every stop is open on a fresh save", async ({ page }) => {
+  const last = LEVELS[LEVELS.length - 1];
+  await page.goto("./#/map");
+  await page.getByRole("button", { name: new RegExp(`Line 13, stop 8, ${last.name}, not played yet`) }).click();
+  await expect(page.getByRole("heading", { name: last.name.toUpperCase() })).toBeVisible();
+});
+
 test("a failed departure explains what went wrong", async ({ page }) => {
   await page.goto("./#/level/1");
   const pz = loadLevel(0);

@@ -382,6 +382,12 @@ export const LINES: { name: string; color: number; stops: Stop[] }[] = [
 // `free` only marks where the line will fall.
 export const FREE_STOPS = 20;
 
+// While the campaign is being tested every stop can be played in any order. Set to false
+// to have stops unlock one after another again.
+export const ALL_OPEN = true;
+
+export const isOpen = (index: number, reached: number): boolean => ALL_OPEN || index <= reached;
+
 export const LEVELS: (Stop & { line: number; stop: number; free: boolean })[] = LINES.flatMap((ln, line) =>
   ln.stops.map((lv, stop) => ({ ...lv, line, stop })),
 ).map((lv, i) => ({ ...lv, free: i < FREE_STOPS }));

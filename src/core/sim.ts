@@ -4,7 +4,8 @@
 // - A train that meets a train standing still (held at a signal, or queued) waits behind it.
 // - Two trains entering the same cell, or passing through each other, crash.
 // - A train that runs off its track derails; one that reaches a platform of another
-//   colour counts as the wrong platform.
+//   colour counts as the wrong platform, and so does one that reaches a timed platform
+//   before it opens.
 //
 // The result holds one frame per beat for playback plus a per-train outcome.
 
@@ -14,7 +15,7 @@ import { type Cell, type Dir, type Puzzle, ckey, opp, same, step } from "./puzzl
 const HOLD_BEATS = 2;
 
 export type Outcome = "arrived" | "wrong" | "crashed";
-export type EventKind = "arrived" | "wrong" | "crash" | "derail" | "lost";
+export type EventKind = "arrived" | "wrong" | "early" | "crash" | "derail" | "lost";
 
 export interface TrainFrame {
   id: number;
@@ -63,7 +64,7 @@ interface Plan {
   to: Cell;
   in: Dir;
   out: Dir;
-  end: Outcome | "derailed" | "";
+  end: Outcome | "derailed" | "early" | "";
 }
 
 export function run(pz: Puzzle, lay: Layout): RunResult {
@@ -169,7 +170,8 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
       if (si >= 0) {
         const st = pz.stations[si];
         if (st.dir !== entry) plan.end = "derailed";
-        else plan.end = st.color === tr.color ? "arrived" : "wrong";
+        else if (st.color !== tr.color) plan.end = "wrong";
+        else plan.end = t + 1 < (st.opens ?? 0) ? "early" : "arrived";
       } else if (pz.solid(n) || pz.depotIndexAt(n) >= 0) {
         plan.end = "derailed";
       } else {
@@ -231,6 +233,8 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
       finish(tr, "crashed", "crash", t + 1, events);
     } else if (p.end === "derailed") {
       finish(tr, "crashed", "derail", t + 1, events);
+    } else if (p.end === "early") {
+      finish(tr, "wrong", "early", t + 1, events);
     } else if (p.end !== "") {
       finish(tr, p.end, p.end === "crashed" ? "crash" : p.end, t + 1, events);
     } else {

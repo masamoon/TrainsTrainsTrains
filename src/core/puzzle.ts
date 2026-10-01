@@ -37,6 +37,7 @@ export interface Station {
   pos: Cell;
   dir: Dir; // side facing its track
   color: number;
+  opens?: number; // first beat a train may arrive; unset for always open
 }
 
 // A tunnel runs straight under blocked ground between two mouths. Its track is part of
@@ -96,7 +97,8 @@ export interface LevelData {
   name?: string;
   rows: string[];
   depots: { at: [number, number]; dir: string; trains: number[]; start?: number; every?: number; goods?: boolean }[];
-  stations: { at: [number, number]; dir: string; color: number }[];
+  // `opens`: a timed platform that turns away trains arriving before that beat.
+  stations: { at: [number, number]; dir: string; color: number; opens?: number }[];
   // Track already laid when the level opens: it can be built onto but not erased.
   fixed?: [number, number][][];
   // Tunnel mouths, in pairs on the same row or column.
@@ -244,7 +246,7 @@ export class Puzzle {
       every: d.every ?? 3,
       goods: d.goods ?? false,
     }));
-    pz.stations = data.stations.map((s) => ({ pos: cell(s.at[0], s.at[1]), dir: dirChar(s.dir), color: s.color }));
+    pz.stations = data.stations.map((s) => ({ pos: cell(s.at[0], s.at[1]), dir: dirChar(s.dir), color: s.color, opens: s.opens }));
     pz.fixed = (data.fixed ?? []).map((p) => p.map(([x, y]) => cell(x, y)));
     pz.tunnels = (data.tunnels ?? []).map(([[ax, ay], [bx, by]]) => tunnel(pz, cell(ax, ay), cell(bx, by)));
     pz.allowStop = data.allowStop ?? false;

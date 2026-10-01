@@ -565,6 +565,37 @@ export class Board {
     const col = livery(st.color);
     this.rrect(c.x - cs * 0.38, c.y - cs * 0.38, cs * 0.76, cs * 0.76, cs * 0.18, "#fff", col, Math.max(3, cs * 0.09));
     this.glyph(st.color, c, cs * 0.13, col);
+    if (st.opens) this.drawTimetable(st);
+  }
+
+  // A timed platform carries a clock badge on its back corner: the beat it opens on, counting
+  // down during a run and turning green once trains may arrive.
+  private drawTimetable(st: Station): void {
+    const { ctx } = this;
+    const cs = this.cellSize;
+    const c = this.center(st.pos);
+    const [fx, fy] = vec(st.dir);
+    const at = { x: c.x - fx * cs * 0.34 + -fy * cs * 0.34, y: c.y - fy * cs * 0.34 + fx * cs * 0.34 };
+    const beat = this.result ? Math.floor((this.clock * 1000) / BEAT_MS) : 0;
+    const left = (st.opens ?? 0) - beat;
+    const r = cs * 0.21;
+    this.circle(at, r + Math.max(1.5, cs * 0.03), COLORS.well);
+    this.circle(at, r, left > 0 ? COLORS.bezel : COLORS.green);
+    ctx.fillStyle = COLORS.lit;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    if (left > 0) {
+      ctx.font = `700 ${Math.round(cs * 0.27)}px "Barlow Condensed", sans-serif`;
+      ctx.fillText(String(left), at.x, at.y + cs * 0.01);
+    } else {
+      ctx.strokeStyle = COLORS.lit;
+      ctx.lineWidth = Math.max(1.5, cs * 0.045);
+      ctx.beginPath();
+      ctx.moveTo(at.x - r * 0.45, at.y);
+      ctx.lineTo(at.x - r * 0.1, at.y + r * 0.35);
+      ctx.lineTo(at.x + r * 0.45, at.y - r * 0.35);
+      ctx.stroke();
+    }
   }
 
   private glyph(color: number, c: Pt, r: number, fill: string): void {
@@ -699,7 +730,7 @@ export class Board {
     const { ctx } = this;
     const cs = this.cellSize;
     const c = this.center(ev.pos);
-    const color = outcomeColor(ev.kind === "arrived" ? "arrived" : ev.kind === "wrong" ? "wrong" : "crashed");
+    const color = outcomeColor(ev.kind === "arrived" ? "arrived" : ev.kind === "wrong" || ev.kind === "early" ? "wrong" : "crashed");
     ctx.save();
     ctx.globalAlpha = Math.max(0, 1 - age / 1.6);
     ctx.strokeStyle = color;

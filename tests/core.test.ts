@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FLOOR_FROM, dateLabel, generate, meetsFloor, today } from "../src/core/daily";
 import { Layout } from "../src/core/layout";
-import { LEVELS, loadLevel } from "../src/core/levels";
+import { FREE_STOPS, LEVELS, loadLevel } from "../src/core/levels";
 import { type LevelData, Puzzle, W, cell, edgeCells } from "../src/core/puzzle";
 import { Save, shareText } from "../src/core/save";
 import { run } from "../src/core/sim";
@@ -157,6 +157,28 @@ describe("tunnels, existing track and goods trains", () => {
   });
 });
 
+describe("timed platforms", () => {
+  const line = (opens: number) => puzzle(["......"], [{ at: [0, 0], dir: "E", trains: [0] }], [{ at: [5, 0], dir: "W", color: 0, opens }], { allowStop: true });
+
+  it("turns away a train that arrives before the platform opens", () => {
+    const pz = line(7);
+    const lay = new Layout();
+    draw(pz, lay, [[1, 0], [2, 0], [3, 0], [4, 0]]);
+    const res = run(pz, lay);
+    expect(res.outcomes[0].result).toBe("wrong");
+    expect(res.events[0].kind).toBe("early");
+    lay.stops.add("2,0");
+    expect(run(pz, lay).success).toBe(true);
+  });
+
+  it("accepts a train arriving on the opening beat", () => {
+    const pz = line(5);
+    const lay = new Layout();
+    draw(pz, lay, [[1, 0], [2, 0], [3, 0], [4, 0]]);
+    expect(run(pz, lay).success).toBe(true);
+  });
+});
+
 describe("campaign", () => {
   LEVELS.forEach((data, i) => {
     it(`${data.id} ${data.name}: reference solution solves for three stars`, () => {
@@ -180,6 +202,16 @@ describe("campaign", () => {
 describe("lines", () => {
   it("gives every stop a unique id", () => {
     expect(new Set(LEVELS.map((lv) => lv.id)).size).toBe(LEVELS.length);
+  });
+
+  it("has at least 100 stops, the first 20 free", () => {
+    expect(LEVELS.length).toBeGreaterThanOrEqual(100);
+    expect(LEVELS.filter((lv) => lv.free).map((lv) => lv.id)).toEqual(LEVELS.slice(0, FREE_STOPS).map((lv) => lv.id));
+    expect(FREE_STOPS).toBe(20);
+  });
+
+  it("numbers stops in order along each line", () => {
+    LEVELS.forEach((lv) => expect(lv.id).toBe(`${lv.line + 1}-${lv.stop + 1}`));
   });
 });
 

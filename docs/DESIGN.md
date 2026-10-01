@@ -44,6 +44,9 @@ The board is a small grid (about 7 by 8). Some cells are woods, water or town an
   A tunnel is a single track: two trains meeting inside it crash.
 - **Goods trains** (Line 2 on): boxy wagons with ribs (square dots at their depot) that move every other beat.
   They change the timing without adding a tool: a goods train sits on a crossing for two beats.
+- **Timed platforms** (Line 7 on): a platform with a clock badge opens on the beat shown.
+  A train that arrives sooner is turned away (amber, like a wrong platform), so it has to be held back with stop signals or a longer route.
+  During a run the badge counts down and turns green once the platform is open.
 
 Press **Depart** and the simulation runs in beats. Every train moves one cell per beat.
 Two trains in the same cell, or passing through each other, crash. A train that runs off the track derails.
@@ -80,13 +83,37 @@ Line 2, Valley Line (teal):
 7. Ridge Junction: existing track through a tunnel, sorting on the far side, and a goods train crossing the branch.
 8. Valley Rush: everything together; the goods line crosses right in front of the tunnel.
 
+Lines 3 to 13 (eight stops each, 104 stops in all) mix those ideas on bigger boards, one theme per line.
+Each line opens on a stop that teaches its idea and ends on a "rush" that uses everything so far.
+
+| Line | Name | Focus |
+| --- | --- | --- |
+| 3 | Harbour Line | two stop signals in a row, sharing a trunk and sorting it, queues |
+| 4 | Market Line | three colours from one depot (two colour signals), merging then sorting |
+| 5 | Moor Line | single-line working in corridors, tunnels with crossings |
+| 6 | Coal Line | goods trains holding up the trains behind them |
+| 7 | Clockwork Line | **New: timed platform** |
+| 8 | Junction Line | existing track to cross, branch off or share |
+| 9 | Festival Line | the fourth colour (tangerine, diamond) and four-way sorting |
+| 10 | Coast Line | larger mixed boards |
+| 11 | Summit Line | tunnels with goods trains and timetables |
+| 12 | Night Mail | timing-heavy: goods, timed platforms, long sorting runs |
+| 13 | Grand Terminus | the hardest mixes |
+
+These lines were generated rather than drawn: `tools/campaign` places depots and platforms on a themed board, solves it many times with randomised routes,
+keeps boards whose solve rate matches the stop's place on the difficulty curve and that need what the stop is about (a stop signal, the tunnel, two lamps),
+then searches the chosen board harder so par is tight. The chosen levels are frozen as plain data in `src/core/lines/`.
+
+**Free and paid**: the first 20 stops (Line 1, Line 2 and the first four of Line 3) are marked `free` in the level data; the rest are planned as paid packs.
+Nothing is gated yet: every stop is playable, unlocked in order as before.
+
 Every stop carries a reference solution. The tests check that it solves for three stars, that every piece of it is one a player could draw,
 and, where it uses signals, that it fails without them.
 
 ### Mechanics we chose not to add
 
 - **Chain or block signals** (hold until the way ahead is clear): they would solve the timing for the player, which is the puzzle. The stop signal stays the one timing tool.
-- **Longer trains, one-way track, timed platforms**: each adds a rule every later level has to explain. Revisit if a Line 3 needs a fresh idea.
+- **Longer trains, one-way track**: each adds a rule every later level has to explain. Timed platforms were the one deferred idea brought in (Line 7), because they give stop signals a second job without a new tool.
 
 ## Daily Line
 

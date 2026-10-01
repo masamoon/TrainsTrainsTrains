@@ -68,6 +68,18 @@ test("valley line", async ({ page }) => {
   await page.screenshot({ path: `${OUT}/level_valley.png` });
 });
 
+test("timed platform", async ({ page }) => {
+  const i = LEVELS.findIndex((lv) => lv.id === "7-6");
+  const pz = loadLevel(i);
+  const levels: Record<string, unknown> = {};
+  LEVELS.slice(0, i).forEach((lv) => (levels[lv.id] = { stars: 3 }));
+  levels[pz.id] = { stars: 0, layout: pz.solutionLayout().toData() };
+  await open(page, `./#/level/${i + 1}`, saveData({ levels }));
+  await page.getByRole("button", { name: "DEPART" }).click();
+  await page.waitForTimeout(2650);
+  await page.screenshot({ path: `${OUT}/level_timed.png` });
+});
+
 test("daily", async ({ page }) => {
   await open(page, "./#/daily", saveData());
   await page.screenshot({ path: `${OUT}/daily.png` });

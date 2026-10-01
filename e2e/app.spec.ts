@@ -100,3 +100,29 @@ test("the Valley Line follows Line 1, and trains run through a tunnel", async ({
   await page.getByRole("button", { name: "DEPART" }).click();
   await expect(page.getByRole("heading", { name: "ALL TRAINS HOME" })).toBeVisible({ timeout: 10_000 });
 });
+
+test("a timed platform turns away a train that comes too early", async ({ page }) => {
+  const i = LEVELS.findIndex((lv) => lv.id === "7-1");
+  const pz = loadLevel(i);
+  // The reference layout without its stop signals gets there too soon.
+  const lay = pz.solutionLayout();
+  lay.stops.clear();
+  const levels: Record<string, unknown> = {};
+  for (const lv of LEVELS.slice(0, i)) levels[lv.id] = { stars: 3 };
+  levels[pz.id] = { stars: 0, layout: lay.toData() };
+  await page.addInitScript((json) => localStorage.setItem("trainstrains.save.v1", json), JSON.stringify({ levels, daily: {} }));
+  await page.goto(`./#/level/${i + 1}`);
+  await expect(page.getByText("New: timed platform")).toBeVisible();
+  await page.getByRole("button", { name: "DEPART" }).click();
+  await expect(page.getByRole("heading", { name: "TOO EARLY" })).toBeVisible({ timeout: 15_000 });
+});
+
+test("the map runs on to the last of more than a hundred stops", async ({ page }) => {
+  const levels: Record<string, unknown> = {};
+  for (const lv of LEVELS.slice(0, -1)) levels[lv.id] = { stars: 3 };
+  await page.addInitScript((json) => localStorage.setItem("trainstrains.save.v1", json), JSON.stringify({ levels, daily: {} }));
+  await page.goto("./#/map");
+  const last = LEVELS[LEVELS.length - 1];
+  await expect(page.getByRole("button", { name: new RegExp(`Line ${last.line + 1}, stop ${last.stop + 1}, ${last.name}, next`) })).toBeVisible();
+  expect(LEVELS.length).toBeGreaterThanOrEqual(100);
+});

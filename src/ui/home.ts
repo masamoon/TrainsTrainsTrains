@@ -1,16 +1,17 @@
-// Home: the wordmark, the campaign card and today's Daily Line ticket.
+// Home: the wordmark, the campaign card and today's Daily Wye ticket.
 
 import { DEPARTURES, dateLabel, numberLabel, today } from "../core/daily";
 import { LEVELS, LINES } from "../core/levels";
 import type { Save } from "../core/save";
-import { COLORS, h, livery, overlay, svg, trainSvg } from "./dom";
+import { COLORS, h, livery, overlay, svg, wyeMark } from "./dom";
 import { type Screen, go } from "./nav";
 
 export function homeScreen(save: Save): Screen {
   const wordmark = h(
     "h1",
-    { class: "wordmark", "aria-label": "TrainsTrainsTrains" },
-    ...[0, 1, 2].map((i) => h("span", { style: `padding-left:${i * 24}px`, "aria-hidden": "true" }, trainSvg(i, 44), "TRAINS")),
+    { class: "wordmark", "aria-label": "Wye" },
+    wyeMark(76),
+    h("span", { "aria-hidden": "true" }, h("b", {}, "WYE"), h("small", {}, "THE JUNCTION PUZZLE")),
   );
 
   const next = save.nextLevelIndex();
@@ -28,14 +29,14 @@ export function homeScreen(save: Save): Screen {
   const day = today();
   const d = save.daily(day);
   let blurb = "One puzzle for everyone today. Six departures to get every train home.";
-  if (d.solved) blurb = `Solved on departure ${d.rows.length} of ${DEPARTURES}. A new line opens at midnight.`;
-  else if (d.rows.length >= DEPARTURES) blurb = "Out of departures today. A new line opens at midnight.";
+  if (d.solved) blurb = `Solved on departure ${d.rows.length} of ${DEPARTURES}. A new junction opens at midnight.`;
+  else if (d.rows.length >= DEPARTURES) blurb = "Out of departures today. A new junction opens at midnight.";
   else if (d.rows.length > 0) blurb = `${d.rows.length} of ${DEPARTURES} departures used. Keep going.`;
   const streak = save.dailyStats(day).streak;
   const ticket = h(
     "section",
     { class: "ticket" },
-    h("div", { class: "card-head" }, h("span", { class: "eyebrow" }, "DAILY LINE"), h("span", { class: "number" }, numberLabel(day))),
+    h("div", { class: "card-head" }, h("span", { class: "eyebrow" }, "DAILY WYE"), h("span", { class: "number" }, numberLabel(day))),
     h("h2", { class: "display", style: "margin:0;font-size:30px;line-height:1" }, dateLabel(day)),
     h("p", { class: "muted" }, blurb),
     h(

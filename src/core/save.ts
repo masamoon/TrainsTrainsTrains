@@ -1,10 +1,11 @@
-// Local progress: campaign stars and builds, Daily Line attempts and streaks.
+// Local progress: campaign stars and builds, Daily Wye attempts and streaks.
 
 import { DEPARTURES, numberLabel } from "./daily";
 import type { LayoutData } from "./layout";
 import { LEVELS } from "./levels";
 import type { Outcome } from "./sim";
 
+// Saved under the game's working title. Keep this key, or players lose their progress.
 const KEY = "trainstrains.save.v1";
 
 interface LevelSave {
@@ -83,7 +84,7 @@ export class Save {
     this.write();
   }
 
-  // Daily Line
+  // Daily Wye
 
   daily(day: number): DailySave {
     return this.data.daily[day] ?? { rows: [], solved: false, track: 0 };
@@ -151,7 +152,7 @@ export class Save {
 export function shareText(day: number, d: DailySave, par: number): string {
   const squares: Record<Outcome, string> = { arrived: "🟩", wrong: "🟨", crashed: "🟥" };
   const score = d.solved ? `${d.rows.length}/${DEPARTURES}` : `X/${DEPARTURES}`;
-  const lines = [`TrainsTrainsTrains ${numberLabel(day)} · ${score}`];
+  const lines = [`Wye ${numberLabel(day)} · ${score}`];
   for (const row of d.rows) lines.push(row.map((r) => squares[r]).join(""));
   if (d.solved) lines.push(`track ${d.track} · par ${par}`);
   return lines.join("\n");

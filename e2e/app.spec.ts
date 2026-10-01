@@ -2,11 +2,11 @@ import { expect, test } from "@playwright/test";
 import { LEVELS, loadLevel } from "../src/core/levels";
 import { drag } from "./helpers";
 
-test("home shows the campaign and today's Daily Line", async ({ page }) => {
+test("home shows the campaign and today's Daily Wye", async ({ page }) => {
   await page.goto("./");
-  await expect(page.getByRole("heading", { name: "TrainsTrainsTrains" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wye" })).toBeVisible();
   await expect(page.getByRole("button", { name: "START" })).toBeVisible();
-  await expect(page.getByText("DAILY LINE", { exact: true })).toBeVisible();
+  await expect(page.getByText("DAILY WYE", { exact: true })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
@@ -40,7 +40,7 @@ test("a failed departure explains what went wrong", async ({ page }) => {
   await expect(page.getByText(`Track 0 · par ${pz.par}`)).toBeVisible();
 });
 
-test("the Daily Line counts departures and ends with a shareable result", async ({ page, context }) => {
+test("the Daily Wye counts departures and ends with a shareable result", async ({ page, context }) => {
   test.setTimeout(90_000); // six full playbacks
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("./#/daily");
@@ -61,12 +61,12 @@ test("the Daily Line counts departures and ends with a shareable result", async 
   await expect(page.getByRole("heading", { name: "OUT OF DEPARTURES" })).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "COPY RESULT" }).click();
   const text = await page.evaluate(() => navigator.clipboard.readText());
-  expect(text).toMatch(/^TrainsTrainsTrains No\. \d{4} · X\/6\n/);
+  expect(text).toMatch(/^Wye No\. \d{4} · X\/6\n/);
   await page.getByRole("button", { name: "Show a solution" }).click();
   await expect(page.getByRole("button", { name: "NO DEPARTURES LEFT" })).toBeDisabled();
 });
 
-test("test mode can reset today's Daily Line", async ({ page }) => {
+test("test mode can reset today's Daily Wye", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("./#/daily");
   await expect(page.getByRole("button", { name: /Reset today's puzzle/ })).toHaveCount(0);

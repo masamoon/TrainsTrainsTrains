@@ -51,7 +51,7 @@ export function mapScreen(save: Save): Screen {
   const strip = h(
     "div",
     { class: "strip" },
-    h("div", {}, h("div", { class: "eyebrow" }, `DAILY LINE ${numberLabel(day)} · ${dateLabel(day)}`), h("div", { style: "font-weight:600;font-size:17px" }, status)),
+    h("div", {}, h("div", { class: "eyebrow" }, `DAILY WYE ${numberLabel(day)} · ${dateLabel(day)}`), h("div", { style: "font-weight:600;font-size:17px" }, status)),
     h("button", { class: "btn btn-ticket", style: "min-height:48px;font-size:19px", onclick: () => go("#/daily") }, "BOARD"),
   );
 

@@ -1,7 +1,7 @@
 // Screen router. Routes live in the URL hash so the game works under any Pages subpath.
 
 import { initAnalytics, track } from "./analytics";
-import { LEVELS } from "./core/levels";
+import { LEVELS, isOpen } from "./core/levels";
 import { Save } from "./core/save";
 import "./styles.css";
 import { homeScreen } from "./ui/home";
@@ -20,7 +20,7 @@ function render(): void {
   const [name, arg] = route.split("/");
   const index = Number(arg) - 1;
   if (name === "map") current = mapScreen(save);
-  else if (name === "level" && Number.isInteger(index) && index >= 0 && index < LEVELS.length && index <= save.nextLevelIndex())
+  else if (name === "level" && Number.isInteger(index) && index >= 0 && index < LEVELS.length && isOpen(index, save.nextLevelIndex()))
     current = playScreen(save, "level", index);
   else if (name === "daily") current = playScreen(save, "daily", 0);
   else current = homeScreen(save);

@@ -58,7 +58,7 @@ Scoring: 3 stars for a solution that uses no more track than par, 2 stars for pa
 ## Campaign
 
 A line map in the style of a metro diagram: each level is a stop, completed stops fill in and show their stars.
-Lines stack up the map, each with its own colour and a name band at its foot; stops unlock in order across lines.
+Lines stack up the map, each with its own colour and a name band at its foot; stops unlock in order across lines. For now `ALL_OPEN` in `levels.ts` opens every stop so the whole campaign can be played in any order.
 Each stop teaches at most one new idea, flagged on the map ("New: crossing").
 
 Line 1, Branch Line (first playable):
@@ -105,7 +105,7 @@ keeps boards whose solve rate matches the stop's place on the difficulty curve a
 then searches the chosen board harder so par is tight. The chosen levels are frozen as plain data in `src/core/lines/`.
 
 **Free and paid**: the first 20 stops (Line 1, Line 2 and the first four of Line 3) are marked `free` in the level data; the rest are planned as paid packs.
-Nothing is gated yet: every stop is playable, unlocked in order as before.
+Nothing is gated yet: every stop is open and can be played in any order.
 
 Every stop carries a reference solution. The tests check that it solves for three stars, that every piece of it is one a player could draw,
 and, where it uses signals, that it fails without them.

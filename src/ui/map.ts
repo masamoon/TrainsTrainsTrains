@@ -1,7 +1,7 @@
-// The campaign line map. Stops unlock in order.
+// The campaign line map. Stops unlock in order (or are all open, see ALL_OPEN).
 
 import { dateLabel, numberLabel, today } from "../core/daily";
-import { LEVELS, LINES } from "../core/levels";
+import { LEVELS, LINES, isOpen } from "../core/levels";
 import type { Save } from "../core/save";
 import { COLORS, h, livery, starPoints, starsSvg, svg } from "./dom";
 import { type Screen, go } from "./nav";
@@ -90,7 +90,7 @@ function lineMap(save: Save): SVGSVGElement {
           : `<path d="${d}" fill="none" stroke="${COLORS.dot}" stroke-width="${lw * 0.7}" stroke-dasharray="6 10" stroke-linecap="round"/>`;
     }
     // Name band: a bezel strip with the line's roundel.
-    const open = first <= reached;
+    const open = isOpen(first, reached);
     const label = `LINE ${line + 1} · ${ln.name.toUpperCase()}`;
     track += `<rect x="18" y="${bandY - 19}" width="${W - 36}" height="38" rx="9" fill="${open ? COLORS.bezel : "#8d978f"}"/>`;
     track += `<circle cx="42" cy="${bandY}" r="9" fill="${open ? color : COLORS.dot}" stroke="${COLORS.lit}" stroke-width="3"/>`;
@@ -128,17 +128,22 @@ function lineMap(save: Save): SVGSVGElement {
         g += `<rect x="${bx}" y="${c.y + 6}" width="${bw}" height="23" rx="6" fill="${COLORS.bezel}"/>`;
         g += `<text x="${bx + 8}" y="${c.y + 23}" font-family="Barlow Condensed" font-weight="700" font-size="14" letter-spacing="0.5" fill="${COLORS.lit}">${badge}</text>`;
       }
+    } else if (isOpen(i, reached)) {
+      // Open ahead of the player's progress: playable, but not yet the stop they're on.
+      g += `<circle class="hit" cx="${c.x}" cy="${c.y}" r="18" fill="#fff" stroke="${COLORS.ink}" stroke-width="3.5"/>`;
+      g += `<text x="${c.x}" y="${c.y + 6}" text-anchor="middle" font-family="Barlow Condensed" font-weight="700" font-size="18" fill="${COLORS.ink}">${n}</text>`;
+      g += `<text x="${tx}" y="${c.y + 6}" text-anchor="${anchor}" font-family="Barlow" font-weight="500" font-size="17" fill="${COLORS.ink}">${lv.name}</text>`;
     } else {
       g += `<circle cx="${c.x}" cy="${c.y}" r="16" fill="${COLORS.enamel}" stroke="${COLORS.dot}" stroke-width="3"/>`;
       g += `<text x="${c.x}" y="${c.y + 6}" text-anchor="middle" font-family="Barlow Condensed" font-weight="700" font-size="17" fill="#8d978f">${n}</text>`;
       g += `<text x="${tx}" y="${c.y + 6}" text-anchor="${anchor}" font-family="Barlow" font-weight="500" font-size="17" fill="#8d978f">${lv.name}</text>`;
     }
-    const open = i <= reached;
+    const open = isOpen(i, reached);
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
     group.setAttribute("class", open ? "map-stop" : "map-stop locked");
     group.innerHTML = `<circle cx="${c.x}" cy="${c.y}" r="44" fill="transparent"/>${g}`;
     const where = lv.line > 0 ? `Line ${lv.line + 1}, stop ${n}` : `Stop ${n}`;
-    const label = `${where}, ${lv.name}${open ? (i < reached ? `, ${stars} of 3 stars` : ", next") : ", locked"}`;
+    const label = `${where}, ${lv.name}${!open ? ", locked" : i < reached ? `, ${stars} of 3 stars` : i === reached ? ", next" : ", not played yet"}`;
     group.setAttribute("aria-label", label);
     if (open) {
       group.setAttribute("role", "button");

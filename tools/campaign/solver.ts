@@ -407,3 +407,42 @@ export function ascii(pz: Puzzle, lay?: Layout): string {
   }
   return lines.join("\n");
 }
+
+// The answer a player tries first: every stream on its own shortest route, as if no other
+// train existed, with the levers and lamps that routing implies. `ok` is whether that works
+// with no stop signals; `patched` whether it works once collisions are patched with up to
+// three stop signals, which players find by trial and error; `track` is its track count.
+export function obvious(pz: Puzzle): { ok: boolean; patched: boolean; track: number } {
+  const a = obviousWith(pz, false);
+  const b = obviousWith(pz, true);
+  // Report whichever a player would get further with: working beats patched beats neither,
+  // then less track.
+  const rank = (o: typeof a) => (o.ok ? 0 : o.patched ? 1 : 2) * 1000 + o.track;
+  return rank(a) <= rank(b) ? a : b;
+}
+
+// `share`: later lines join earlier track where that is shorter, as a player merging onto
+// a line already drawn would; otherwise every line ignores the others.
+function obviousWith(pz: Puzzle, share: boolean): { ok: boolean; patched: boolean; track: number } {
+  const rng = new Rng(1);
+  const flat = new Map<string, number>();
+  for (let y = 0; y < pz.h; y++) for (let x = 0; x < pz.w; x++) flat.set(`${x},${y}`, 0);
+  const routes: Route[] = [];
+  const drawn = new Layout();
+  for (const d of demands(pz)) {
+    let best: Step[] | null = null;
+    for (const st of d.stations) {
+      const p = route(pz, share ? drawn : new Layout(), d.depot, st, flat, share ? 1 : 0, rng);
+      if (p && (!best || p.length < best.length)) best = p;
+    }
+    if (!best) return { ok: false, patched: false, track: Infinity };
+    routes.push({ d, path: best });
+    addEdges(pz, drawn, best);
+  }
+  const lay = new Layout();
+  for (const r of routes) addEdges(pz, lay, r.path);
+  const track = lay.trackCount(pz);
+  if (!signals(pz, lay, routes)) return { ok: false, patched: false, track };
+  if (run(pz, lay).success) return { ok: true, patched: true, track };
+  return { ok: false, patched: pz.allowStop && addStops(pz, lay, routes, 3, rng), track };
+}

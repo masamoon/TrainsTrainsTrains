@@ -4,7 +4,7 @@
 import type { Layout } from "../../src/core/layout";
 import { type Cell, type Dir, DIRS, E, type LevelData, N, Puzzle, S, W, ckey, opp, step } from "../../src/core/puzzle";
 import { run } from "../../src/core/sim";
-import { type Found, Rng, ascii, solve } from "./solver";
+import { type Found, Rng, ascii, obvious, solve } from "./solver";
 
 export type Theme = "woods" | "water" | "town" | "hill" | "mixed";
 
@@ -302,20 +302,61 @@ export function describe(c: Candidate): string {
 
 // Searches harder for a cheaper reference, and re-checks that a stop signal is needed.
 // Returns false when the candidate doesn't hold up.
-export function deepen(c: Candidate, r: Recipe, log: (s: string) => void = () => {}): boolean {
+// `strict` (every stop that doesn't introduce something) also rejects boards that are
+// easier than their par suggests; see easyWhy.
+export function deepen(c: Candidate, r: Recipe, log: (s: string) => void = () => {}, strict = false): boolean {
   const deep = solve(c.pz, { attempts: 1500, seed: 99, maxStops: r.maxStops ?? 3 });
   if (deep.best && (deep.best.track < c.best.track || (deep.best.track === c.best.track && deep.best.stops < c.best.stops))) {
     log(`par ${c.best.track} -> ${deep.best.track}`);
     c.best = deep.best;
   }
+  let noStop = Infinity;
+  if (r.needStop || (strict && c.best.stops > 0)) noStop = solve(c.pz, { attempts: 1000, seed: 98, maxStops: 0 }).best?.track ?? Infinity;
   if (r.needStop) {
     if (c.best.stops === 0) return false;
-    const ns = solve(c.pz, { attempts: 1000, seed: 98, maxStops: 0 });
-    if (ns.best && ns.best.track <= c.best.track) return false;
+    if (noStop <= c.best.track) return false;
   }
   const f = features(c.pz, c.best.lay);
   if (r.stops && (f.stops < r.stops[0] || f.stops > r.stops[1])) return false;
   if (r.lamps && (f.lamps < r.lamps[0] || f.lamps > r.lamps[1])) return false;
   if (r.crossings && f.crossings < r.crossings) return false;
+  if (strict) {
+    const why = easyWhy(c.best.track, obvious(c.pz), f.stops > 0 ? noStop : Infinity, Math.max(c.rate, looseRate(c.pz)));
+    if (why) {
+      log(`too easy (${why})`);
+      return false;
+    }
+  }
   return true;
+}
+
+// Every stop except a line's first and those that introduce something must not be easier
+// than its par suggests.
+export function strict(st: { id: string; introTitle?: string }): boolean {
+  return !st.introTitle && !st.id.endsWith("-1");
+}
+
+// Why a board is easier than its par suggests, or "" if it isn't:
+// obvious: every train on its own shortest route, patched with a few stop signals by trial
+//   and error, already earns two stars;
+// nostop: the stop signals in the reference solution are nearly optional (one tile over par
+//   without any);
+// rate: random attempts stumble on a solution too often.
+export function easyWhy(par: number, ob: { patched: boolean; track: number }, noStop: number, rate: number): string {
+  if (ob.patched && ob.track <= twoStar(par)) return "obvious";
+  if (noStop <= par + 1) return "nostop";
+  if (rate > 0.3) return "rate";
+  return "";
+}
+
+// Share of random attempts that work when up to three stop signals are allowed (the recipe's
+// rate may allow fewer, which undercounts boards that need several).
+export function looseRate(pz: Puzzle): number {
+  const r = solve(pz, { attempts: 400, seed: 3, maxStops: 3 });
+  return r.successes / r.attempts;
+}
+
+// Most track that still earns two stars (starsFor in src/core/puzzle.ts).
+export function twoStar(par: number): number {
+  return par + Math.max(2, Math.ceil(par * 0.25));
 }

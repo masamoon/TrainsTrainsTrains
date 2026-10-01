@@ -150,7 +150,8 @@ export class Save {
 }
 
 // Where a pasted result sends people. Change it here if the game moves to its own domain.
-export const PLAY_URL = "https://masamoon.github.io/TrainsTrainsTrains/";
+// ?ref=share lets analytics count players who arrive from someone else's result.
+export const PLAY_URL = "https://masamoon.github.io/TrainsTrainsTrains/?ref=share";
 
 export function shareText(day: number, d: DailySave, par: number): string {
   const squares: Record<Outcome, string> = { arrived: "🟩", wrong: "🟨", crashed: "🟥" };

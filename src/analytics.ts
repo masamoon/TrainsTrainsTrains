@@ -32,7 +32,10 @@ export function initAnalytics(): void {
         capture_pageleave: false,
         disable_session_recording: true,
       });
-      posthog.register({ game: "trainstrainstrains" });
+      posthog.register({ game: "wye" });
+      // Visits that come from a pasted Daily Wye result carry ?ref=share (see PLAY_URL).
+      const ref = new URLSearchParams(location.search).get("ref");
+      posthog.register_for_session({ ref: ref ?? "direct" });
       client = posthog;
       for (const [event, props] of queue.splice(0)) client.capture(event, props);
     })

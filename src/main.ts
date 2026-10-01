@@ -25,7 +25,9 @@ function render(): void {
   else if (name === "daily") current = playScreen(save, "daily", 0);
   else current = homeScreen(save);
   app.replaceChildren(current.el);
-  track("$pageview", { screen: name || "home" });
+  const where: Record<string, string | number> = { screen: name || "home" };
+  if (name === "level" && LEVELS[index]) where.level = LEVELS[index].id;
+  track("$pageview", where);
   window.scrollTo(0, 0);
 }
 

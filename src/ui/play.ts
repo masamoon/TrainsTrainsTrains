@@ -169,9 +169,17 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     if (daily) {
       save.recordDaily(day, result.outcomes.map((o) => o.result), result.success, lay.trackCount(pz), lay.toData());
       const d = save.daily(day);
-      track("daily_departure", { day, departure: d.rows.length, solved: result.success });
+      const outcomes = result.outcomes.map((o) => o.result);
+      track("daily_departure", {
+        day,
+        departure: d.rows.length,
+        solved: result.success,
+        crashed: outcomes.filter((o) => o === "crashed").length,
+        wrong: outcomes.filter((o) => o === "wrong").length,
+      });
       if (save.dailyFinished(day)) {
-        track("daily_finished", { day, solved: d.solved, departures: d.rows.length, track: d.track, par: pz.par, streak: save.dailyStats(day).streak });
+        const signals = lay.stops.size + lay.lamps.size;
+        track("daily_finished", { day, solved: d.solved, departures: d.rows.length, track: d.track, par: pz.par, signals, streak: save.dailyStats(day).streak });
       }
     } else {
       track("level_departure", { level: pz.id, success: result.success });
@@ -335,12 +343,17 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
 
   async function copyResult(): Promise<void> {
     const text = shareText(day, save.daily(day), pz.par);
-    track("result_copied", { day, solved: save.daily(day).solved });
+    const solved = save.daily(day).solved;
     try {
       await navigator.clipboard.writeText(text);
+      track("result_copied", { day, solved, method: "clipboard" });
       toast("Result copied. Paste it anywhere.");
     } catch {
-      if (navigator.share) navigator.share({ text }).catch(() => {});
+      if (navigator.share)
+        navigator
+          .share({ text })
+          .then(() => track("result_copied", { day, solved, method: "share_sheet" }))
+          .catch(() => {});
       else toast("Copy is blocked here. Long-press to select the result instead.");
     }
   }

@@ -93,7 +93,7 @@ and, where it uses signals, that it fails without them.
 One puzzle for everyone each day, generated from the date, so every player gets the same board with no server.
 
 - Number: days since 30 Sep 2026, starting at No. 0001. Uses the player's local date, as Wordle does.
-- Difficulty follows the week: two lines Monday and Tuesday, three from Wednesday, with a ridge and tunnel on Thursday,
+- Difficulty follows the week, above a floor that always needs a signal (below): two lines Monday and Tuesday, three from Wednesday, with a ridge and tunnel on Thursday,
   a goods train on Friday, a colour-sorting switch on Saturday, and sorting plus a tunnel on Sunday.
 - Six departures. Each departure adds a row of squares, one per train: green arrived, amber wrong platform, red crashed or lost.
 - The result copies as a short text grid with the puzzle number, departures used, and track against par.
@@ -101,3 +101,16 @@ One puzzle for everyone each day, generated from the date, so every player gets 
 
 The generator builds a working solution first (routes found on the grid, crossings and switches where they meet, straight through a tunnel where one is cheaper), checks it in the simulator, then removes the track.
 Par is the track count of that solution, so every Daily Line is known to be solvable.
+
+### Difficulty floor (from No. 0003, 2 Oct 2026)
+
+Every day has to need at least one signal. The generator keeps trying boards until one clears the floor:
+
+- Each depot sends three trains, two or three beats apart, so the lines are busy.
+- The generator's own track must crash without a stop signal, and a single stop must fix it.
+- A solver (`src/core/solver.ts`) searches every track-only layout of separate lines crossing at right angles. None may get within three pieces of par. Because a detour shifts timing two beats per two pieces, dodging the collision without a signal costs at least four extra pieces.
+- Saturday and Sunday also send two colours from one depot, which can't be solved at all without a colour signal.
+- A minimum par per weekday keeps boards from being trivially small: Monday 10, Tuesday 13, Wednesday to Friday 16, weekend 15.
+
+No. 0001 and No. 0002 came out before the floor and are generated exactly as they were. The unit tests check the floor on 400 days.
+The solver doesn't try lines that share track through switches or loop over themselves; both cost extra track, so within the budget they rarely matter.

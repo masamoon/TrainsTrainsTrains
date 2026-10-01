@@ -1,0 +1,188 @@
+// Line 4, Market Line. Generated with tools/campaign and curated by hand.
+
+import type { Stop } from "../levels";
+
+export const MARKET_LINE: Stop[] = [
+  {
+    id: "4-1",
+    name: "Three Ways",
+    rows: ["......T", ".H.....", ".H.....", ".HH.HH.", ".....H.", ".....H.", "T......"],
+    depots: [{ at: [6, 2], dir: "W", trains: [0, 1, 2], every: 4, start: 2 }],
+    stations: [{ at: [4, 6], dir: "N", color: 0 }, { at: [3, 0], dir: "S", color: 1 }, { at: [1, 6], dir: "N", color: 2 }],
+    allowStop: true,
+    allowLamp: true,
+    introTitle: "Three colours",
+    introText: "A colour signal picks out one colour. Chain two switches to split three.",
+    solution: {
+      paths: [
+        [[6, 2], [5, 2], [4, 2], [3, 2], [3, 3], [3, 4], [3, 5], [4, 5], [4, 6]],
+        [[6, 2], [5, 2], [4, 2], [3, 2], [3, 1], [3, 0]],
+        [[6, 2], [5, 2], [4, 2], [3, 2], [3, 3], [3, 4], [3, 5], [2, 5], [1, 5], [1, 6]],
+      ],
+      lamps: [[3, 2, 1], [3, 5, 0]],
+      levers: [[3, 2, "N"], [3, 5, "E"]],
+    },
+  },
+  {
+    id: "4-2",
+    name: "Stallholders",
+    rows: [".T.....", "HT.....", ".......", ".......", ".......", ".......", "..HH...", ".HHH..."],
+    depots: [{ at: [6, 6], dir: "W", trains: [2, 0, 1, 0], every: 4, start: 3 }],
+    stations: [{ at: [4, 0], dir: "S", color: 0 }, { at: [6, 4], dir: "W", color: 1 }, { at: [6, 1], dir: "W", color: 2 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[6, 6], [5, 6], [5, 5], [5, 4], [5, 3], [5, 2], [5, 1], [4, 1], [4, 0]],
+        [[6, 6], [5, 6], [5, 5], [5, 4], [5, 3], [5, 2], [5, 1], [6, 1]],
+        [[6, 6], [5, 6], [5, 7], [4, 7], [4, 6], [4, 5], [4, 4], [5, 4], [6, 4]],
+      ],
+      stops: [[5, 7]],
+      lamps: [[5, 6, 1], [5, 1, 0]],
+      levers: [[5, 6, "S"], [5, 1, "W"]],
+    },
+  },
+  {
+    id: "4-3",
+    name: "Corn Exchange",
+    rows: ["......T", "......T", ".......", ".....HH", ".......", "....TT.", ".....T.", "......."],
+    depots: [
+      { at: [0, 2], dir: "E", trains: [0, 1], every: 3, start: 2 },
+      { at: [2, 0], dir: "S", trains: [1, 0], every: 4, start: 3 },
+    ],
+    stations: [{ at: [0, 6], dir: "E", color: 0 }, { at: [3, 7], dir: "N", color: 1 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[2, 0], [2, 1], [2, 2], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [0, 6]],
+        [[2, 0], [2, 1], [2, 2], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [2, 6], [3, 6], [3, 7]],
+        [[0, 2], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [2, 6], [3, 6], [3, 7]],
+        [[0, 2], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [0, 6]],
+      ],
+      stops: [[2, 2]],
+      lamps: [[1, 6, 0]],
+      levers: [[1, 6, "W"]],
+    },
+  },
+  {
+    id: "4-4",
+    name: "Market Cross",
+    rows: ["........", "........", "H.T..T.H", "HHT..THH", "..H..H..", "........", "........", "........"],
+    depots: [
+      { at: [3, 7], dir: "N", trains: [0, 1, 2], every: 3, start: 1 },
+      { at: [6, 7], dir: "N", trains: [1], every: 3, start: 3 },
+    ],
+    stations: [{ at: [3, 0], dir: "S", color: 0 }, { at: [5, 0], dir: "S", color: 1 }, { at: [1, 7], dir: "N", color: 2 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[6, 7], [6, 6], [5, 6], [4, 6], [4, 5], [4, 4], [4, 3], [4, 2], [4, 1], [5, 1], [5, 0]],
+        [[3, 7], [3, 6], [4, 6], [4, 5], [4, 4], [4, 3], [4, 2], [4, 1], [3, 1], [3, 0]],
+        [[3, 7], [3, 6], [4, 6], [4, 5], [4, 4], [4, 3], [4, 2], [4, 1], [5, 1], [5, 0]],
+        [[3, 7], [3, 6], [2, 6], [1, 6], [1, 7]],
+      ],
+      stops: [[6, 6]],
+      lamps: [[4, 1, 1], [3, 6, 2]],
+      levers: [[4, 1, "E"], [3, 6, "W"]],
+    },
+  },
+  {
+    id: "4-5",
+    name: "Weighbridge",
+    rows: ["..HHHH..", "..HHH...", "........", "....HH..", "....H...", "........", ".......H", ".......H"],
+    depots: [
+      { at: [1, 7], dir: "N", trains: [1, 0], every: 4, start: 2 },
+      { at: [7, 5], dir: "W", trains: [2], every: 3, start: 2 },
+    ],
+    stations: [{ at: [6, 0], dir: "S", color: 0 }, { at: [0, 3], dir: "E", color: 1 }, { at: [0, 5], dir: "E", color: 2 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[1, 7], [1, 6], [1, 5], [1, 4], [1, 3], [0, 3]],
+        [[1, 7], [1, 6], [1, 5], [1, 4], [1, 3], [2, 3], [3, 3], [3, 2], [4, 2], [5, 2], [6, 2], [6, 1], [6, 0]],
+        [[7, 5], [6, 5], [5, 5], [4, 5], [3, 5], [2, 5], [1, 5], [0, 5]],
+      ],
+      stops: [[3, 5]],
+      lamps: [[1, 3, 1]],
+      levers: [[1, 3, "W"]],
+    },
+  },
+  {
+    id: "4-6",
+    name: "Haberdashers",
+    rows: ["..H.....", "........", "........", "...H....", "...H....", "........", "........", "..H....."],
+    depots: [
+      { at: [0, 4], dir: "E", trains: [0], every: 3, start: 3 },
+      { at: [7, 3], dir: "W", trains: [1], every: 3, start: 1 },
+      { at: [6, 0], dir: "S", trains: [2], every: 3, start: 2 },
+    ],
+    stations: [{ at: [6, 7], dir: "N", color: 0 }, { at: [0, 1], dir: "E", color: 1 }, { at: [0, 6], dir: "E", color: 2 }],
+    allowStop: true,
+    allowLamp: true,
+    introTitle: "One trunk",
+    introText: "Three depots, three platforms. Run them all down one line and sort them at the end.",
+    solution: {
+      paths: [
+        [[6, 0], [6, 1], [6, 2], [5, 2], [4, 2], [3, 2], [2, 2], [2, 3], [2, 4], [1, 4], [1, 5], [1, 6], [0, 6]],
+        [[0, 4], [1, 4], [1, 5], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [6, 7]],
+        [[7, 3], [6, 3], [6, 2], [5, 2], [4, 2], [3, 2], [2, 2], [2, 1], [1, 1], [0, 1]],
+      ],
+      lamps: [[2, 2, 2], [1, 6, 2]],
+      levers: [[2, 2, "S"], [1, 6, "W"]],
+    },
+  },
+  {
+    id: "4-7",
+    name: "Clock Tower",
+    rows: [".HH.....", ".HH.....", "........", ".T......", "......T.", "........", ".....HH.", ".....HH."],
+    depots: [
+      { at: [0, 6], dir: "E", trains: [0, 1, 2, 1], every: 4, start: 0 },
+      { at: [3, 7], dir: "N", trains: [2], every: 3, start: 2 },
+    ],
+    stations: [{ at: [7, 1], dir: "W", color: 0 }, { at: [0, 2], dir: "E", color: 1 }, { at: [0, 4], dir: "E", color: 2 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[0, 6], [1, 6], [1, 5], [1, 4], [0, 4]],
+        [[0, 6], [1, 6], [1, 5], [1, 4], [2, 4], [2, 3], [2, 2], [1, 2], [0, 2]],
+        [[0, 6], [1, 6], [1, 5], [1, 4], [2, 4], [2, 3], [2, 2], [3, 2], [4, 2], [4, 1], [5, 1], [6, 1], [7, 1]],
+        [[3, 7], [3, 6], [2, 6], [1, 6], [1, 5], [1, 4], [0, 4]],
+      ],
+      stops: [[2, 6]],
+      lamps: [[1, 4, 2], [2, 2, 1]],
+      levers: [[1, 4, "W"], [2, 2, "W"]],
+    },
+  },
+  {
+    id: "4-8",
+    name: "Market Day",
+    rows: ["........", "........", "........", "H.T.....", ".......T", "H.T.....", "........", "........", "........"],
+    depots: [
+      { at: [6, 0], dir: "S", trains: [0, 1, 0], every: 4, start: 3 },
+      { at: [7, 7], dir: "W", trains: [2, 1], every: 3, start: 3 },
+      { at: [0, 7], dir: "E", trains: [1, 2], every: 4, start: 0 },
+    ],
+    stations: [{ at: [7, 3], dir: "W", color: 0 }, { at: [4, 0], dir: "S", color: 1 }, { at: [2, 0], dir: "S", color: 2 }],
+    allowStop: true,
+    allowLamp: true,
+    introTitle: "Market day",
+    introText: "Every stall wants a delivery at once.",
+    solution: {
+      paths: [
+        [[7, 7], [6, 7], [5, 7], [4, 7], [3, 7], [3, 6], [3, 5], [3, 4], [3, 3], [3, 2], [3, 1], [2, 1], [2, 0]],
+        [[0, 7], [1, 7], [2, 7], [3, 7], [3, 6], [3, 5], [3, 4], [3, 3], [3, 2], [3, 1], [4, 1], [4, 0]],
+        [[6, 0], [6, 1], [7, 1], [7, 2], [6, 2], [6, 3], [7, 3]],
+        [[7, 7], [6, 7], [5, 7], [4, 7], [3, 7], [3, 6], [3, 5], [3, 4], [3, 3], [3, 2], [3, 1], [4, 1], [4, 0]],
+        [[6, 0], [6, 1], [5, 1], [4, 1], [4, 0]],
+        [[0, 7], [1, 7], [2, 7], [3, 7], [3, 6], [3, 5], [3, 4], [3, 3], [3, 2], [3, 1], [2, 1], [2, 0]],
+      ],
+      stops: [[2, 7]],
+      lamps: [[3, 1, 2], [6, 1, 0]],
+      levers: [[3, 1, "W"], [6, 1, "E"]],
+    },
+  },
+];

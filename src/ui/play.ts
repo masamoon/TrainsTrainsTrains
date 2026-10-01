@@ -221,12 +221,15 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     } else if (ev?.kind === "wrong") {
       title = "WRONG PLATFORM";
       text = `The ${who} train reached a platform of another colour.`;
+    } else if (ev?.kind === "early") {
+      title = "TOO EARLY";
+      text = `The ${who} train reached its platform before it opened. Hold it back with a stop signal or a longer route.`;
     } else if (ev?.kind === "lost") {
       title = "STILL RUNNING";
       text = `The ${who} train never reached a platform. Look for loops and trains stuck in a queue.`;
     }
     const b = openOverlay("card", title);
-    b.append(h("h2", { style: `color:${title === "WRONG PLATFORM" ? "var(--ticket-soft)" : COLORS.red}` }, title), h("p", { style: "margin:0;line-height:1.4" }, text));
+    b.append(h("h2", { style: `color:${title === "WRONG PLATFORM" || title === "TOO EARLY" ? "var(--ticket-soft)" : COLORS.red}` }, title), h("p", { style: "margin:0;line-height:1.4" }, text));
     if (isDaily) {
       const rows = save.daily(day).rows;
       b.append(h("p", { class: "muted", style: "font-weight:600" }, `Departure ${rows.length} of ${DEPARTURES}`), resultRows(rows, 22));

@@ -1,0 +1,186 @@
+// Line 7, Clockwork Line. Generated with tools/campaign and curated by hand.
+
+import type { Stop } from "../levels";
+
+export const CLOCKWORK_LINE: Stop[] = [
+  {
+    id: "7-1",
+    name: "Not Before Ten",
+    rows: ["...TT.~", ".~....~", ".....~~", ".......", ".....~~", ".~....~", "...TT.~"],
+    depots: [{ at: [5, 0], dir: "S", trains: [0], every: 3, start: 1 }],
+    stations: [{ at: [0, 2], dir: "E", color: 0, opens: 10 }],
+    allowStop: true,
+    allowLamp: true,
+    introTitle: "New: timed platform",
+    introText: "This platform opens on the beat shown on its clock. A train that arrives sooner is turned away, so hold it back.",
+    solution: { paths: [[[5, 0], [5, 1], [4, 1], [3, 1], [2, 1], [2, 2], [1, 2], [0, 2]]], stops: [[1, 2]] },
+  },
+  {
+    id: "7-2",
+    name: "Late Shift",
+    rows: [".......", "~......", "~......", "....~..", "....~~.", ".~~..~.", "......."],
+    depots: [
+      { at: [6, 2], dir: "W", trains: [0], every: 3, start: 3 },
+      { at: [3, 6], dir: "N", trains: [1], every: 3, start: 1 },
+    ],
+    stations: [{ at: [1, 0], dir: "S", color: 0, opens: 13 }, { at: [4, 0], dir: "S", color: 1 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[3, 6], [3, 5], [3, 4], [3, 3], [3, 2], [3, 1], [4, 1], [4, 0]],
+        [[6, 2], [5, 2], [4, 2], [3, 2], [2, 2], [1, 2], [1, 1], [1, 0]],
+      ],
+      stops: [[5, 2], [1, 2]],
+    },
+  },
+  {
+    id: "7-3",
+    name: "Platform Clock",
+    rows: [".......", ".......", ".......", "~H...H~", "~.....~", ".......", "~~...~~", ".~...~."],
+    depots: [{ at: [2, 7], dir: "N", trains: [0, 1, 0], every: 3, start: 2 }],
+    stations: [{ at: [4, 7], dir: "N", color: 0 }, { at: [4, 0], dir: "S", color: 1, opens: 18 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[2, 7], [2, 6], [3, 6], [4, 6], [4, 7]],
+        [[2, 7], [2, 6], [3, 6], [4, 6], [4, 5], [4, 4], [4, 3], [4, 2], [4, 1], [4, 0]],
+      ],
+      stops: [[4, 4], [2, 6]],
+      lamps: [[4, 6, 0]],
+      levers: [[4, 6, "S"]],
+    },
+  },
+  {
+    id: "7-4",
+    name: "Half Past",
+    rows: ["..~..~~.", "..~.....", "..~.....", "........", "........", "..~.....", "..~.....", "..~..~~."],
+    depots: [
+      { at: [0, 6], dir: "E", trains: [0], every: 3, start: 3 },
+      { at: [0, 3], dir: "E", trains: [1], every: 3, start: 2 },
+      { at: [1, 0], dir: "S", trains: [2], every: 3, start: 1 },
+    ],
+    stations: [
+      { at: [3, 0], dir: "S", color: 0 },
+      { at: [7, 3], dir: "W", color: 1 },
+      { at: [4, 7], dir: "N", color: 2, opens: 15 },
+    ],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4], [2, 4], [3, 4], [3, 5], [4, 5], [4, 6], [4, 7]],
+        [[0, 6], [1, 6], [1, 5], [1, 4], [2, 4], [3, 4], [3, 3], [3, 2], [3, 1], [3, 0]],
+        [[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3], [7, 3]],
+      ],
+      stops: [[4, 6], [4, 5]],
+      lamps: [[3, 4, 2]],
+      levers: [[3, 4, "S"]],
+    },
+  },
+  {
+    id: "7-5",
+    name: "Escapement",
+    rows: ["........", ".~~.....", ".~~...T.", "TT......", "TT......", ".~~...T.", ".~~.....", "........"],
+    depots: [
+      { at: [4, 0], dir: "S", trains: [0], every: 3, start: 3 },
+      { at: [5, 7], dir: "N", trains: [0], every: 3, start: 2 },
+      { at: [3, 7], dir: "N", trains: [1], every: 3, start: 2 },
+    ],
+    stations: [{ at: [7, 6], dir: "W", color: 0 }, { at: [6, 0], dir: "S", color: 1, opens: 15 }],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[3, 7], [3, 6], [4, 6], [4, 5], [4, 4], [5, 4], [5, 3], [5, 2], [5, 1], [6, 1], [6, 0]],
+        [[4, 0], [4, 1], [4, 2], [4, 3], [4, 4], [5, 4], [5, 5], [5, 6], [6, 6], [7, 6]],
+        [[5, 7], [5, 6], [6, 6], [7, 6]],
+      ],
+      stops: [[5, 1], [5, 3]],
+      lamps: [[5, 4, 1]],
+      levers: [[5, 4, "N"]],
+    },
+  },
+  {
+    id: "7-6",
+    name: "Two Clocks",
+    rows: [".~......", ".~......", "........", "........", "........", "TT......", "........", "........"],
+    depots: [
+      { at: [7, 1], dir: "W", trains: [0, 1], every: 4, start: 3 },
+      { at: [4, 7], dir: "N", trains: [2], every: 3, start: 0 },
+    ],
+    stations: [
+      { at: [2, 7], dir: "N", color: 0, opens: 17 },
+      { at: [0, 3], dir: "E", color: 1, opens: 20 },
+      { at: [7, 5], dir: "W", color: 2 },
+    ],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[7, 1], [6, 1], [6, 2], [6, 3], [6, 4], [5, 4], [4, 4], [3, 4], [2, 4], [2, 5], [2, 6], [2, 7]],
+        [[4, 7], [4, 6], [4, 5], [5, 5], [6, 5], [7, 5]],
+        [[7, 1], [6, 1], [6, 2], [6, 3], [6, 4], [5, 4], [4, 4], [3, 4], [2, 4], [2, 3], [1, 3], [0, 3]],
+      ],
+      stops: [[4, 4], [2, 5]],
+      lamps: [[2, 4, 0]],
+      levers: [[2, 4, "S"]],
+    },
+  },
+  {
+    id: "7-7",
+    name: "Pendulum",
+    rows: ["........", "........", ".....TTT", "........", "........", "........", "........", "..T....."],
+    depots: [
+      { at: [0, 4], dir: "E", trains: [0], every: 3, start: 1, goods: true },
+      { at: [4, 7], dir: "N", trains: [1], every: 3, start: 3 },
+      { at: [4, 0], dir: "S", trains: [2], every: 3, start: 3 },
+    ],
+    stations: [
+      { at: [6, 0], dir: "S", color: 0 },
+      { at: [7, 3], dir: "W", color: 1, opens: 12 },
+      { at: [0, 1], dir: "E", color: 2 },
+    ],
+    allowStop: true,
+    allowLamp: true,
+    solution: {
+      paths: [
+        [[0, 4], [1, 4], [1, 3], [2, 3], [3, 3], [3, 2], [3, 1], [4, 1], [5, 1], [6, 1], [6, 0]],
+        [[4, 7], [4, 6], [4, 5], [4, 4], [5, 4], [6, 4], [6, 3], [7, 3]],
+        [[4, 0], [4, 1], [4, 2], [3, 2], [2, 2], [1, 2], [1, 1], [0, 1]],
+      ],
+      stops: [[5, 4]],
+    },
+  },
+  {
+    id: "7-8",
+    name: "Rush Hour Timetable",
+    rows: ["..~.....", "..~.....", "..~.....", "..~.....", "H......H", ".....~..", ".....~..", ".....~..", ".....~.."],
+    depots: [
+      { at: [7, 6], dir: "W", trains: [0, 1, 0], every: 4, start: 2 },
+      { at: [0, 1], dir: "E", trains: [2], every: 3, start: 1 },
+      { at: [7, 3], dir: "W", trains: [1], every: 3, start: 3 },
+    ],
+    stations: [
+      { at: [6, 8], dir: "N", color: 0 },
+      { at: [4, 0], dir: "S", color: 1, opens: 13 },
+      { at: [0, 5], dir: "E", color: 2, opens: 11 },
+    ],
+    allowStop: true,
+    allowLamp: true,
+    introTitle: "Timetable",
+    introText: "Every platform keeps its own time.",
+    solution: {
+      paths: [
+        [[7, 6], [6, 6], [6, 7], [6, 8]],
+        [[7, 6], [6, 6], [6, 5], [6, 4], [5, 4], [4, 4], [4, 3], [4, 2], [4, 1], [4, 0]],
+        [[7, 3], [6, 3], [6, 4], [5, 4], [4, 4], [4, 3], [4, 2], [4, 1], [4, 0]],
+        [[0, 1], [1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [0, 5]],
+      ],
+      stops: [[4, 1], [1, 5], [1, 1]],
+      lamps: [[6, 6, 0]],
+      levers: [[6, 6, "S"]],
+    },
+  },
+];

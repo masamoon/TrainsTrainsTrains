@@ -2,9 +2,20 @@
 // Each level carries a reference solution that the tests run through the simulator;
 // par is that solution's track count.
 
+import { HARBOUR_LINE } from "./lines/line03";
+import { MARKET_LINE } from "./lines/line04";
+import { MOOR_LINE } from "./lines/line05";
+import { COAL_LINE } from "./lines/line06";
+import { CLOCKWORK_LINE } from "./lines/line07";
+import { JUNCTION_LINE } from "./lines/line08";
+import { FESTIVAL_LINE } from "./lines/line09";
+import { COAST_LINE } from "./lines/line10";
+import { SUMMIT_LINE } from "./lines/line11";
+import { NIGHT_MAIL } from "./lines/line12";
+import { GRAND_TERMINUS } from "./lines/line13";
 import { type LevelData, Puzzle } from "./puzzle";
 
-type Stop = LevelData & { id: string; name: string };
+export type Stop = LevelData & { id: string; name: string };
 
 const BRANCH_LINE: Stop[] = [
   {
@@ -107,10 +118,10 @@ const BRANCH_LINE: Stop[] = [
     introText: "Join three sides of a piece to make a switch. Trains from either branch merge onto the stem.",
     solution: {
       paths: [
-        [[0, 1], [1, 1], [2, 1], [3, 1], [3, 2], [3, 3], [4, 3], [5, 3], [6, 3]],
-        [[0, 5], [1, 5], [2, 5], [3, 5], [3, 4], [3, 3]],
+        [[0, 1], [1, 1], [1, 2], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3]],
+        [[0, 5], [1, 5], [1, 4], [1, 3]],
       ],
-      stops: [[2, 1]],
+      stops: [[1, 1]],
     },
   },
   {
@@ -155,13 +166,13 @@ const BRANCH_LINE: Stop[] = [
     introText: "Everything at once. Sort the western trains and keep the northern line clear of them.",
     solution: {
       paths: [
-        [[0, 2], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [5, 1], [6, 1], [7, 1]],
-        [[5, 2], [5, 3], [5, 4], [5, 5], [6, 5], [7, 5]],
+        [[0, 2], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2], [6, 1], [7, 1]],
+        [[6, 2], [6, 3], [6, 4], [6, 5], [7, 5]],
         [[4, 0], [4, 1], [4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7]],
       ],
       stops: [[4, 1]],
-      lamps: [[5, 2, 2]],
-      levers: [[5, 2, "S"]],
+      lamps: [[6, 2, 2]],
+      levers: [[6, 2, "S"]],
     },
   },
 ];
@@ -339,24 +350,40 @@ const VALLEY_LINE: Stop[] = [
     introText: "Everything at once. The goods line crosses right in front of the tunnel.",
     solution: {
       paths: [
-        [[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [5, 2], [5, 1], [6, 1], [7, 1]],
-        [[5, 3], [5, 4], [5, 5], [6, 5], [7, 5]],
+        [[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3], [6, 2], [6, 1], [7, 1]],
+        [[6, 3], [6, 4], [6, 5], [7, 5]],
         [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7]],
       ],
-      stops: [[2, 1]],
-      lamps: [[5, 3, 0]],
+      stops: [[1, 3]],
+      lamps: [[6, 3, 0]],
     },
   },
 ];
 
 // Lines run one after another on the map; stops unlock in order across them.
+// Lines 3 on were found with the solver in tools/campaign, then picked by hand.
 export const LINES: { name: string; color: number; stops: Stop[] }[] = [
   { name: "Branch Line", color: 0, stops: BRANCH_LINE },
   { name: "Valley Line", color: 1, stops: VALLEY_LINE },
+  { name: "Harbour Line", color: 2, stops: HARBOUR_LINE },
+  { name: "Market Line", color: 3, stops: MARKET_LINE },
+  { name: "Moor Line", color: 1, stops: MOOR_LINE },
+  { name: "Coal Line", color: 0, stops: COAL_LINE },
+  { name: "Clockwork Line", color: 2, stops: CLOCKWORK_LINE },
+  { name: "Junction Line", color: 3, stops: JUNCTION_LINE },
+  { name: "Festival Line", color: 1, stops: FESTIVAL_LINE },
+  { name: "Coast Line", color: 2, stops: COAST_LINE },
+  { name: "Summit Line", color: 0, stops: SUMMIT_LINE },
+  { name: "Night Mail", color: 3, stops: NIGHT_MAIL },
+  { name: "Grand Terminus", color: 1, stops: GRAND_TERMINUS },
 ];
 
-export const LEVELS: (Stop & { line: number; stop: number })[] = LINES.flatMap((ln, line) =>
+// The first stops are free to play; the rest will be sold later. Nothing is gated yet:
+// `free` only marks where the line will fall.
+export const FREE_STOPS = 20;
+
+export const LEVELS: (Stop & { line: number; stop: number; free: boolean })[] = LINES.flatMap((ln, line) =>
   ln.stops.map((lv, stop) => ({ ...lv, line, stop })),
-);
+).map((lv, i) => ({ ...lv, free: i < FREE_STOPS }));
 
 export const loadLevel = (index: number): Puzzle => Puzzle.fromData(LEVELS[index]);

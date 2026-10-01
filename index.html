@@ -8,6 +8,36 @@
     <title>TrainsTrainsTrains</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="preload" href="./fonts/BarlowCondensed-Bold.ttf" as="font" type="font/ttf" crossorigin />
+    <script>
+      // Pages caches index.html for ~10 minutes, so right after a deploy the
+      // browser can hold a page whose hashed bundle no longer exists. When a
+      // bundle fails to load, refetch the page past the cache and reload once.
+      addEventListener(
+        "error",
+        function (e) {
+          var el = e.target;
+          if (!el || (el.tagName !== "SCRIPT" && el.tagName !== "LINK")) return;
+          if (!/\/assets\//.test(el.src || el.href || "")) return;
+          try {
+            if (sessionStorage.getItem("ttt.staleReload")) return;
+            sessionStorage.setItem("ttt.staleReload", "1");
+          } catch (_) {
+            return;
+          }
+          fetch(location.href, { cache: "reload" }).finally(function () {
+            location.reload();
+          });
+        },
+        true,
+      );
+      addEventListener("load", function () {
+        setTimeout(function () {
+          try {
+            sessionStorage.removeItem("ttt.staleReload");
+          } catch (_) {}
+        }, 5000);
+      });
+    </script>
   </head>
   <body>
     <div id="app"></div>

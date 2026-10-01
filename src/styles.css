@@ -247,6 +247,20 @@ button:focus-visible,
   letter-spacing: 0.08em;
   color: var(--ink-soft);
 }
+.pitch {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.pitch svg {
+  display: block;
+  max-width: 100%;
+}
+.pitch figcaption {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
 .card {
   background: var(--well);
   border-radius: 18px;

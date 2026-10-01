@@ -8,6 +8,7 @@ export const COLORS = {
   dot: "#c3c9be",
   ink: "#1d2622",
   bezel: "#26332e",
+  bezelSoft: "#b9c3bd",
   lit: "#fff4cf",
   green: "#2f9a4c",
   amber: "#e9a21c",
@@ -155,5 +156,26 @@ export function wyeMark(size = 64, label?: string): SVGSVGElement {
     <circle cx="32" cy="36" r="3.2" fill="${COLORS.bezel}"/>
     <circle cx="15" cy="15" r="7" fill="${livery(0)}"/><g fill="#fff">${glyphPath(0, 15, 15, 2.6)}</g>
     <circle cx="49" cy="15" r="7" fill="${livery(1)}"/><g fill="#fff">${glyphPath(1, 49, 15, 2.6)}</g>
+  </svg>`);
+}
+
+// The pitch in one picture: a Rose train held at a red stop signal while a Teal
+// train takes the other branch of the junction. Shown on the home screen and in
+// the link preview image, so the first thing anyone sees is a signal doing its job.
+export function signalScene(label = "A Rose train waits at a red signal while a Teal train takes the branch"): SVGSVGElement {
+  const train = (x: number, y: number, c: number): string =>
+    `<rect x="${x}" y="${y - 9}" width="40" height="18" rx="9" fill="${livery(c)}"/>` +
+    `<rect x="${x + 28}" y="${y - 5}" width="7" height="10" rx="2.5" fill="#fff"/>` +
+    `<g fill="#fff">${glyphPath(c, x + 14, y, 3.6)}</g>`;
+  return svg(`<svg viewBox="0 0 320 76" width="100%" role="img" aria-label="${label}">
+    <rect width="320" height="76" rx="14" fill="${COLORS.bezel}"/>
+    <path d="M14 54 H306 M150 54 C176 54 186 24 212 24 H306" fill="none" stroke="${COLORS.lit}" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="150" cy="54" r="3" fill="${COLORS.bezel}"/>
+    ${train(66, 54, 0)}
+    <path d="M122 46 V33" stroke="${COLORS.bezelSoft}" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="122" cy="26" r="11" fill="${COLORS.red}" opacity="0.28"/>
+    <circle cx="122" cy="26" r="7.5" fill="#131b18"/>
+    <circle cx="122" cy="26" r="5" fill="${COLORS.red}"/>
+    ${train(236, 24, 1)}
   </svg>`);
 }

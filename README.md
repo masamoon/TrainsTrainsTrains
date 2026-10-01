@@ -9,7 +9,7 @@ Play the campaign stop by stop, or the Daily Wye: one shared puzzle a day with s
 
 **Test mode:** https://masamoon.github.io/TrainsTrainsTrains/?test#/daily adds a "Reset today's puzzle" button to the Daily Wye, so you can play today's puzzle again as often as you like. Resetting clears only today's departures; streaks and other days are kept.
 
-**Analytics:** `src/analytics.ts` sends anonymous play events to PostHog (screen views, Daily Wye departures and results, copied results, campaign stops). It stays off until `POSTHOG_KEY` is filled in, and it never runs in test mode or in the browser tests, so playtesting doesn't count as players. No cookies are set.
+**Analytics:** `src/analytics.ts` sends anonymous play events to PostHog (screen views, Daily Wye departures and results, copied results, campaign stops). It reports to Wye's own PostHog project (EU cloud). It never runs in test mode or in the browser tests, so playtesting doesn't count as players. No cookies are set.
 
 The design direction (identity, rules, campaign and daily structure) is in [docs/DESIGN.md](docs/DESIGN.md).
 Screenshots are in [docs/screens](docs/screens).

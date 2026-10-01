@@ -3,7 +3,7 @@
 import { DEPARTURES, dateLabel, numberLabel, today } from "../core/daily";
 import { LEVELS, LINES } from "../core/levels";
 import type { Save } from "../core/save";
-import { COLORS, h, livery, overlay, svg, wyeMark } from "./dom";
+import { COLORS, h, livery, overlay, signalScene, svg, wyeMark } from "./dom";
 import { type Screen, go } from "./nav";
 
 export function homeScreen(save: Save): Screen {
@@ -12,6 +12,13 @@ export function homeScreen(save: Save): Screen {
     { class: "wordmark", "aria-label": "Wye" },
     wyeMark(76),
     h("span", { "aria-hidden": "true" }, h("b", {}, "WYE"), h("small", {}, "THE JUNCTION PUZZLE")),
+  );
+
+  const pitch = h(
+    "figure",
+    { class: "pitch" },
+    signalScene(),
+    h("figcaption", {}, "Lay track, set signals, and time every train home."),
   );
 
   const next = save.nextLevelIndex();
@@ -48,7 +55,7 @@ export function homeScreen(save: Save): Screen {
   );
 
   const help = h("button", { class: "btn btn-ghost", style: "align-self:center", onclick: showHelp }, "How to play");
-  const el = h("main", { class: "screen home" }, h("div", { class: "col" }, wordmark, campaign, ticket, help));
+  const el = h("main", { class: "screen home" }, h("div", { class: "col" }, wordmark, pitch, campaign, ticket, help));
   return { el };
 }
 

@@ -279,11 +279,13 @@ describe("save", () => {
     const s = new Save(store);
     s.recordDaily(9, ["arrived"], true, 5, new Layout().toData());
     s.recordDaily(10, ["crashed", "arrived"], false, 0, new Layout().toData());
-    s.recordDaily(10, ["arrived", "arrived"], true, 7, new Layout().toData());
+    s.recordDaily(10, ["arrived", "arrived"], true, 7, { ...new Layout().toData(), stops: ["2,3"], lamps: [["4,1", 0]] });
     s.recordDaily(10, ["arrived", "arrived"], true, 7, new Layout().toData()); // ignored once solved
     expect(s.daily(10).rows.length).toBe(2);
     expect(s.dailyStats(10)).toEqual({ played: 2, solved: 2, streak: 2, best: 2 });
     expect(new Save(store).daily(10).solved).toBe(true);
-    expect(shareText(10, s.daily(10), 6)).toBe("Wye No. 0010 · 2/6\n🟥🟩\n🟩🟩\ntrack 7 · par 6");
+    expect(shareText(10, s.daily(10), 6)).toBe(
+      "Wye No. 0010 · 2/6\n🟥🟩\n🟩🟩\ntrack 7 · par 6 · 2 signals\nhttps://masamoon.github.io/TrainsTrainsTrains/",
+    );
   });
 });

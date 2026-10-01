@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- The link preview card (public/og.png). Render with: node tools/og/render.mjs -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face { font-family: "Barlow Condensed"; src: url("../../public/fonts/BarlowCondensed-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Barlow"; src: url("../../public/fonts/Barlow-SemiBold.ttf"); font-weight: 600; }
+      html, body { margin: 0; }
+      body { width: 1200px; height: 630px; background: #e4e7e1; color: #1d2622; font-family: "Barlow", sans-serif; display: grid; grid-template-rows: auto 1fr; gap: 28px; padding: 48px 72px; box-sizing: border-box; }
+      header { display: flex; align-items: center; gap: 32px; }
+      header b { font-family: "Barlow Condensed", sans-serif; font-size: 120px; line-height: 0.8; letter-spacing: 0.04em; }
+      header span { display: grid; gap: 14px; }
+      header small { font-family: "Barlow Condensed", sans-serif; font-size: 34px; letter-spacing: 0.08em; color: #56615b; }
+      p { margin: 0; text-wrap: balance; font-size: 34px; color: #1d2622; }
+      #scene { display: grid; gap: 24px; align-content: start; }
+    </style>
+  </head>
+  <body>
+    <header><div id="mark"></div><span><b>WYE</b><small>THE JUNCTION PUZZLE</small></span></header>
+    <div id="scene"><p>Lay track, set signals, and time every train home. New Daily Wye every day.</p></div>
+  </body>
+</html>

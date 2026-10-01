@@ -149,12 +149,19 @@ export class Save {
   }
 }
 
+// Where a pasted result sends people. Change it here if the game moves to its own domain.
+export const PLAY_URL = "https://masamoon.github.io/TrainsTrainsTrains/";
+
 export function shareText(day: number, d: DailySave, par: number): string {
   const squares: Record<Outcome, string> = { arrived: "🟩", wrong: "🟨", crashed: "🟥" };
   const score = d.solved ? `${d.rows.length}/${DEPARTURES}` : `X/${DEPARTURES}`;
   const lines = [`Wye ${numberLabel(day)} · ${score}`];
   for (const row of d.rows) lines.push(row.map((r) => squares[r]).join(""));
-  if (d.solved) lines.push(`track ${d.track} · par ${par}`);
+  if (d.solved) {
+    const signals = (d.layout?.stops?.length ?? 0) + (d.layout?.lamps?.length ?? 0);
+    lines.push(`track ${d.track} · par ${par} · ${signals} signal${signals === 1 ? "" : "s"}`);
+  }
+  lines.push(PLAY_URL);
   return lines.join("\n");
 }
 

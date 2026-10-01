@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateLabel, generate, today } from "../src/core/daily";
+import { FLOOR_FROM, dateLabel, generate, meetsFloor, today } from "../src/core/daily";
 import { Layout } from "../src/core/layout";
 import { LEVELS, loadLevel } from "../src/core/levels";
 import { type LevelData, Puzzle, W, cell, edgeCells } from "../src/core/puzzle";
@@ -190,6 +190,27 @@ describe("daily line", () => {
       expect(run(pz, pz.solutionLayout()).success, `day ${day}`).toBe(true);
       expect(pz.par).toBeGreaterThan(0);
     }
+  }, 60_000);
+
+  it("needs at least one signal every day from No. 0003", () => {
+    for (let day = FLOOR_FROM; day < FLOOR_FROM + 400; day++) {
+      const pz = generate(day); // cached by the test above
+      // The generator's own track crashes without its stop signal.
+      const bare = pz.solutionLayout();
+      bare.stops.clear();
+      expect(pz.solution.stops.length, `day ${day}`).toBeGreaterThan(0);
+      expect(run(pz, bare).success, `day ${day}`).toBe(false);
+      // And the solver finds no track-only layout near par.
+      expect(meetsFloor(pz), `day ${day}`).toBe(true);
+      expect(pz.trainCount(), `day ${day}`).toBeGreaterThanOrEqual(5);
+    }
+  }, 60_000);
+
+  it("keeps No. 0001 and No. 0002 as they were released", () => {
+    const one = generate(1, false);
+    const two = generate(2, false);
+    expect([one.par, one.depots.map((d) => d.trains.join("")).join("|")]).toEqual([15, "0|1|2"]);
+    expect([two.par, two.depots.map((d) => d.trains.join("")).join("|")]).toEqual([21, "00|1|2"]);
   });
 
   it("is deterministic", () => {

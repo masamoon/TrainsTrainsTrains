@@ -4,13 +4,26 @@
 // The generator lays out a working solution first (routes found across the grid, with
 // crossings, a sorting switch or a tunnel where the day calls for them), checks it in the
 // simulator, adding a stop signal if trains collide, and uses its track count as par.
+//
+// From No. 0003 every day also has to clear a floor: its trains must collide on the
+// generator's own track, so the solution needs a stop signal, and the solver must find no
+// way to get within FLOOR_SLACK pieces of par with track alone (see solver.ts). Every
+// depot sends three trains, two or three beats apart, so lines are busy enough that
+// timing matters. Weekends add a sorting switch, which
+// can't be solved at all without a colour signal. No. 0001 and No. 0002 came out before the
+// floor and are generated exactly as they were.
 
 import { Layout } from "./layout";
 import { type Cell, DIRS, type Depot, type Dir, E, N, Puzzle, S, W, ckey, dirBetween, edgeKey, opp, step, tunnel } from "./puzzle";
 import { run } from "./sim";
+import { signalFree } from "./solver";
 
 export const DEPARTURES = 6;
 const EPOCH_UTC = Date.UTC(2026, 8, 30); // Daily Line No. 1
+export const FLOOR_FROM = 3; // first day held to the difficulty floor (Fri 2 Oct 2026)
+// Detours shift a train's timing two beats per two extra pieces, so a slack of 3 means
+// dodging a collision without a signal costs at least four extra pieces.
+const FLOOR_SLACK = 3;
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -42,12 +55,15 @@ interface Profile {
   trains: number;
   tunnel: boolean;
   goods: boolean;
+  floor: boolean; // held to the difficulty floor
+  minPar: number;
 }
 
 // Early in the week two lines, midweek three. Thursday adds a ridge with a tunnel, Friday
 // a goods train, Saturday a sorting switch, and Sunday a sorting switch and a tunnel.
 function profile(day: number): Profile {
-  const base = { tunnel: false, goods: false };
+  if (day >= FLOOR_FROM) return floorProfile(day);
+  const base = { tunnel: false, goods: false, floor: false, minPar: 0 };
   switch (dateOf(day).getUTCDay()) {
     case 1:
     case 2:
@@ -62,6 +78,28 @@ function profile(day: number): Profile {
       return { ...base, w: 7, h: 8, routes: 3, sort: false, trains: 2, goods: true };
     default:
       return { ...base, w: 7, h: 8, routes: 3, sort: false, trains: 2 };
+  }
+}
+
+// The same week once the floor applies, with a minimum track count that climbs from a
+// small Monday board to the busiest midweek ones.
+function floorProfile(day: number): Profile {
+  const base = { tunnel: false, goods: false, floor: true, sort: false, trains: 3 };
+  switch (dateOf(day).getUTCDay()) {
+    case 1:
+      return { ...base, w: 6, h: 7, routes: 2, minPar: 10 };
+    case 2:
+      return { ...base, w: 7, h: 8, routes: 2, minPar: 13 };
+    case 3:
+      return { ...base, w: 7, h: 8, routes: 3, minPar: 16 };
+    case 4:
+      return { ...base, w: 7, h: 8, routes: 3, minPar: 16, tunnel: true };
+    case 5:
+      return { ...base, w: 7, h: 8, routes: 3, minPar: 16, goods: true };
+    case 6:
+      return { ...base, w: 7, h: 8, routes: 2, minPar: 15, sort: true };
+    default:
+      return { ...base, w: 7, h: 8, routes: 2, minPar: 15, sort: true, tunnel: true };
   }
 }
 
@@ -144,9 +182,10 @@ function attemptOnce(rng: Rng, prof: Profile): Puzzle | null {
     reserved.add(ckey(step(st.pos, st.dir)));
     mark(pz, used, path);
     const trains: number[] = [];
-    const count = rng.int(1, prof.trains);
+    const count = prof.floor ? prof.trains : rng.int(1, prof.trains);
     for (let i = 0; i < count; i++) trains.push(color);
-    const depot: Depot = { pos: dp.pos, dir: dp.dir, trains, start: rng.int(0, 2), every: 3, goods: false };
+    const every = prof.floor ? rng.int(2, 3) : 3;
+    const depot: Depot = { pos: dp.pos, dir: dp.dir, trains, start: rng.int(0, 2), every, goods: false };
     pz.depots.push(depot);
     pz.stations.push({ pos: st.pos, dir: st.dir, color });
     paths.push([dp.pos, ...path.map((s) => s.cell), st.pos]);
@@ -175,9 +214,18 @@ function attemptOnce(rng: Rng, prof: Profile): Puzzle | null {
     if (!stop) return null;
     pz.solution.stops = [stop];
     lay.stops.add(ckey(stop));
+  } else if (prof.floor) {
+    return null; // nothing collides, so no signal is needed
   }
   pz.par = lay.trackCount(pz);
+  if (prof.floor && (pz.par < prof.minPar || !meetsFloor(pz))) return null;
   return pz;
+}
+
+// The floor: with track alone, a player must not get within FLOOR_SLACK pieces of par.
+export function meetsFloor(pz: Puzzle): boolean {
+  const kind = signalFree(pz, pz.par + FLOOR_SLACK).kind;
+  return kind === "lamp-needed" || kind === "none-found";
 }
 
 function placeObstacles(rng: Rng, pz: Puzzle): void {

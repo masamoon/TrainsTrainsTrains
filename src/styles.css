@@ -222,19 +222,30 @@ button:focus-visible,
 }
 .wordmark {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 16px;
   margin: 0;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 48px;
-  line-height: 0.92;
-  letter-spacing: 0.02em;
+}
+.wordmark svg {
+  flex: none;
 }
 .wordmark span {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
+}
+.wordmark b {
+  font-size: 64px;
+  line-height: 0.8;
+  letter-spacing: 0.04em;
+}
+.wordmark small {
+  font-size: 17px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
 }
 .card {
   background: var(--well);

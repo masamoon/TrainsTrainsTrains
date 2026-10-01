@@ -1,5 +1,5 @@
 // Looks for a way to solve a puzzle with track alone: no stop signals and no colour lamps.
-// The Daily Line uses it to show that a day needs at least one signal decision.
+// The Daily Wye uses it to show that a day needs at least one signal decision.
 //
 // A depot that sends trains of two colours always needs a lamp: without one, every train
 // takes the same way through every switch. Otherwise each depot's trains run one line from

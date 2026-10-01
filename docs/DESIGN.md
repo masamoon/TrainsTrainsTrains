@@ -1,7 +1,7 @@
-# TrainsTrainsTrains: design direction
+# Wye: design direction
 
 A small, readable puzzle game. Draw track and set signals so every train reaches the platform of its own colour.
-Two ways to play: a campaign of hand-made levels on a line map, and one shared Daily Line puzzle per day.
+Two ways to play: a campaign of hand-made levels on a line map, and one shared Daily Wye puzzle per day.
 
 ## Visual identity: "Mimic Panel"
 
@@ -15,7 +15,7 @@ Everything is drawn in code (no raster art), so it stays crisp at any size.
 | Ink | `#1D2622` | track, text |
 | Bezel | `#26332E` | top bars, depots, signal heads |
 | Enamel blue | `#1F4F8F` | primary action (Depart, Continue) |
-| Ticket | `#F1E2B6` | Daily Line card |
+| Ticket | `#F1E2B6` | Daily Wye card |
 | Lamp green / amber / red | `#2F9A4C` / `#E9A21C` / `#D8432E` | arrived / wrong platform / crashed |
 | Lit | `#FFF4CF` | switch lever lamp, depot arrow, text on dark buttons |
 | Hill | `#D3C29C` / `#B09D74` | hills (ridges that tunnels run under) |
@@ -115,7 +115,7 @@ and, where it uses signals, that it fails without them.
 - **Chain or block signals** (hold until the way ahead is clear): they would solve the timing for the player, which is the puzzle. The stop signal stays the one timing tool.
 - **Longer trains, one-way track**: each adds a rule every later level has to explain. Timed platforms were the one deferred idea brought in (Line 7), because they give stop signals a second job without a new tool.
 
-## Daily Line
+## Daily Wye
 
 One puzzle for everyone each day, generated from the date, so every player gets the same board with no server.
 
@@ -127,7 +127,7 @@ One puzzle for everyone each day, generated from the date, so every player gets 
 - Stats kept locally: played, solved, current streak, best streak.
 
 The generator builds a working solution first (routes found on the grid, crossings and switches where they meet, straight through a tunnel where one is cheaper), checks it in the simulator, then removes the track.
-Par is the track count of that solution, so every Daily Line is known to be solvable.
+Par is the track count of that solution, so every Daily Wye is known to be solvable.
 
 ### Difficulty floor (from No. 0003, 2 Oct 2026)
 

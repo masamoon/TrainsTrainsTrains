@@ -144,3 +144,16 @@ export function overlay(kind: "card" | "ticket" = "card"): { root: HTMLElement; 
   document.body.append(root);
   return { root, body, close: () => root.remove() };
 }
+
+// The Wye mark: the letter Y drawn as track, one line splitting in two at a switch,
+// with a Rose and a Teal lamp on the branches. The favicon is the same drawing.
+export function wyeMark(size = 64, label?: string): SVGSVGElement {
+  const a11y = label ? `role="img" aria-label="${label}"` : `aria-hidden="true"`;
+  return svg(`<svg width="${size}" height="${size}" viewBox="0 0 64 64" ${a11y}>
+    <rect width="64" height="64" rx="14" fill="${COLORS.bezel}"/>
+    <path d="M32 56 V36 C32 28 26 24 18 18 M32 36 C32 28 38 24 46 18" fill="none" stroke="${COLORS.lit}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="32" cy="36" r="3.2" fill="${COLORS.bezel}"/>
+    <circle cx="15" cy="15" r="7" fill="${livery(0)}"/><g fill="#fff">${glyphPath(0, 15, 15, 2.6)}</g>
+    <circle cx="49" cy="15" r="7" fill="${livery(1)}"/><g fill="#fff">${glyphPath(1, 49, 15, 2.6)}</g>
+  </svg>`);
+}

@@ -1,4 +1,4 @@
-// Plays one puzzle: a campaign stop or today's Daily Line.
+// Plays one puzzle: a campaign stop or today's Daily Wye.
 
 import { track } from "../analytics";
 import { DEPARTURES, dateLabel, generate, msUntilTomorrow, numberLabel, today } from "../core/daily";
@@ -32,7 +32,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     h(
       "div",
       { class: "bar-title" },
-      h("div", { class: "eyebrow" }, daily ? `DAILY LINE ${numberLabel(day)}` : `LINE ${LEVELS[index].line + 1} · STOP ${LEVELS[index].stop + 1}`),
+      h("div", { class: "eyebrow" }, daily ? `DAILY WYE ${numberLabel(day)}` : `LINE ${LEVELS[index].line + 1} · STOP ${LEVELS[index].stop + 1}`),
       h("h1", {}, daily ? dateLabel(day) : pz.name.toUpperCase()),
     ),
     h("button", { class: "bar-btn bar-right", onclick: clear }, "Clear"),
@@ -73,7 +73,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
   const departBtn = h("button", { class: "btn btn-primary btn-wide", style: "min-height:58px;font-size:26px", onclick: depart }, "DEPART");
 
   const boardWrap = h("div", { class: "board-wrap" }, board.canvas);
-  // Test mode (?test in the URL) adds a way to replay today's Daily Line.
+  // Test mode (?test in the URL) adds a way to replay today's Daily Wye.
   const testMode = new URLSearchParams(location.search).has("test");
   const resetBtn = daily && testMode ? h("button", { class: "btn btn-ghost", onclick: resetToday }, "Reset today's puzzle (test mode)") : null;
   const body = h("div", { class: "col play-body" }, departures, boardWrap, status, info, toolRow, departBtn, resetBtn);
@@ -263,7 +263,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
       b.append(primary);
     } else {
       primary = h("button", { class: "btn btn-primary btn-wide", onclick: () => go("#/map") }, "BACK TO THE MAP");
-      b.append(h("p", { style: "margin:0" }, `That's the whole ${line.name}, and every line so far. Try today's Daily Line next.`), primary);
+      b.append(h("p", { style: "margin:0" }, `That's the whole ${line.name}, and every line so far. Try today's Daily Wye next.`), primary);
     }
     b.append(h("button", { class: "btn btn-ghost", onclick: backToBuilding }, "Improve this stop"));
     primary.focus();
@@ -271,7 +271,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
 
   function showDailyResult(focus = true): void {
     const d = save.daily(day);
-    const b = openOverlay("ticket", "Daily Line result");
+    const b = openOverlay("ticket", "Daily Wye result");
     b.append(h("div", { class: "card-head" }, h("span", { class: "eyebrow" }, dateLabel(day)), h("span", { class: "number" }, numberLabel(day))));
     if (d.solved) {
       b.append(h("h2", {}, "ALL TRAINS HOME"), h("p", { class: "muted" }, `Solved on departure ${d.rows.length} of ${DEPARTURES} · track ${d.track}, par ${pz.par}`));
@@ -321,7 +321,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
     const tick = () => {
       const s = Math.floor(msUntilTomorrow() / 1000);
       const pad = (v: number) => String(v).padStart(2, "0");
-      countdown.textContent = `Next Daily Line in ${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+      countdown.textContent = `Next Daily Wye in ${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
     };
     tick();
     countdownTimer = window.setInterval(tick, 1000);

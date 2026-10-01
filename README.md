@@ -1,13 +1,15 @@
-# TrainsTrainsTrains
+# Wye
+
+_The junction puzzle._ (Formerly the working title TrainsTrainsTrains; the repository keeps that name so the live link stays the same.)
 
 A small puzzle game about drawing track and setting signals so every train reaches the platform of its own colour.
-Play the campaign stop by stop, or the Daily Line: one shared puzzle a day with six departures and a result you can share.
+Play the campaign stop by stop, or the Daily Wye: one shared puzzle a day with six departures and a result you can share.
 
 **Play it:** https://masamoon.github.io/TrainsTrainsTrains/
 
-**Test mode:** https://masamoon.github.io/TrainsTrainsTrains/?test#/daily adds a "Reset today's puzzle" button to the Daily Line, so you can play today's puzzle again as often as you like. Resetting clears only today's departures; streaks and other days are kept.
+**Test mode:** https://masamoon.github.io/TrainsTrainsTrains/?test#/daily adds a "Reset today's puzzle" button to the Daily Wye, so you can play today's puzzle again as often as you like. Resetting clears only today's departures; streaks and other days are kept.
 
-**Analytics:** `src/analytics.ts` sends anonymous play events to PostHog (screen views, Daily Line departures and results, copied results, campaign stops). It stays off until `POSTHOG_KEY` is filled in, and it never runs in test mode or in the browser tests, so playtesting doesn't count as players. No cookies are set.
+**Analytics:** `src/analytics.ts` sends anonymous play events to PostHog (screen views, Daily Wye departures and results, copied results, campaign stops). It stays off until `POSTHOG_KEY` is filled in, and it never runs in test mode or in the browser tests, so playtesting doesn't count as players. No cookies are set.
 
 The design direction (identity, rules, campaign and daily structure) is in [docs/DESIGN.md](docs/DESIGN.md).
 Screenshots are in [docs/screens](docs/screens).
@@ -16,10 +18,10 @@ Screenshots are in [docs/screens](docs/screens).
 
 It is a plain TypeScript web app built with Vite. There is no game engine: the board is drawn on a canvas and the rest is HTML and SVG.
 
-- `src/core`: the game with no UI. `puzzle.ts` and `layout.ts` hold a board and the player's track, `sim.ts` runs it beat by beat, `levels.ts` has the campaign (Lines 1 and 2 by hand, Lines 3 to 13 in `lines/`), `daily.ts` builds the Daily Line from the date, `save.ts` keeps progress in local storage.
+- `src/core`: the game with no UI. `puzzle.ts` and `layout.ts` hold a board and the player's track, `sim.ts` runs it beat by beat, `levels.ts` has the campaign (Lines 1 and 2 by hand, Lines 3 to 13 in `lines/`), `daily.ts` builds the Daily Wye from the date, `save.ts` keeps progress in local storage.
 - `src/ui`: screens and drawing. `board.ts` draws the board, takes drag input and plays back a run; `home.ts`, `map.ts` and `play.ts` are the screens.
-- `tests/core.test.ts`: rule checks, every campaign stop's reference solution, and more than a year of Daily Line puzzles.
-- `e2e`: browser tests that play a stop and a Daily Line, plus the screenshot script.
+- `tests/core.test.ts`: rule checks, every campaign stop's reference solution, and more than a year of Daily Wye puzzles.
+- `e2e`: browser tests that play a stop and a Daily Wye, plus the screenshot script.
 - `tools/campaign`: the level design tools behind Lines 3 to 13 (not shipped). See below.
 
 ## Running

@@ -215,7 +215,7 @@ describe("lines", () => {
   });
 });
 
-describe("daily line", () => {
+describe("daily wye", () => {
   it("generates a solvable puzzle for every day of a year", () => {
     for (let day = 1; day <= 400; day++) {
       const pz = generate(day, false);
@@ -284,6 +284,6 @@ describe("save", () => {
     expect(s.daily(10).rows.length).toBe(2);
     expect(s.dailyStats(10)).toEqual({ played: 2, solved: 2, streak: 2, best: 2 });
     expect(new Save(store).daily(10).solved).toBe(true);
-    expect(shareText(10, s.daily(10), 6)).toBe("TrainsTrainsTrains No. 0010 · 2/6\n🟥🟩\n🟩🟩\ntrack 7 · par 6");
+    expect(shareText(10, s.daily(10), 6)).toBe("Wye No. 0010 · 2/6\n🟥🟩\n🟩🟩\ntrack 7 · par 6");
   });
 });

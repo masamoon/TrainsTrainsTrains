@@ -1,4 +1,4 @@
-// The Daily Line: one puzzle per calendar day, generated from the day number so every
+// The Daily Wye: one puzzle per calendar day, generated from the day number so every
 // player gets the same board without a server.
 //
 // The generator lays out a working solution first (routes found across the grid, with
@@ -19,7 +19,7 @@ import { run } from "./sim";
 import { signalFree } from "./solver";
 
 export const DEPARTURES = 6;
-const EPOCH_UTC = Date.UTC(2026, 8, 30); // Daily Line No. 1
+const EPOCH_UTC = Date.UTC(2026, 8, 30); // Daily Wye No. 1
 export const FLOOR_FROM = 3; // first day held to the difficulty floor (Fri 2 Oct 2026)
 // Detours shift a train's timing two beats per two extra pieces, so a slack of 3 means
 // dodging a collision without a signal costs at least four extra pieces.
@@ -132,7 +132,7 @@ export function generate(day: number, useCache = true): Puzzle {
     const pz = attemptOnce(rng, prof);
     if (pz) {
       pz.id = `daily-${day}`;
-      pz.name = `Daily Line ${numberLabel(day)}`;
+      pz.name = `Daily Wye ${numberLabel(day)}`;
       cache.set(day, pz);
       return pz;
     }

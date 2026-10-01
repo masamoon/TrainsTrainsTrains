@@ -50,12 +50,12 @@ export const PLAN: PlanLine[] = [
       {
         id: "3-4",
         name: "Quayside",
-        recipe: { w: 7, h: 8, theme: "water", depots: [d(0, 1, 0), d(2)], needStop: true, rate: [0.03, 0.6], target: 0.2 },
+        recipe: { w: 7, h: 8, theme: "water", depots: [d(0, 1, 0), d(2)], needStop: true, rate: [0.02, 0.3], target: 0.1 },
       },
       {
         id: "3-5",
         name: "Pier Queue",
-        recipe: { w: 7, h: 8, theme: "water", depots: [{ trains: [0, 0, 0], every: 2 }, d(1)], needStop: true, rate: [0.03, 0.6], target: 0.2 },
+        recipe: { w: 7, h: 8, theme: "water", depots: [{ trains: [0, 0, 0], every: 2 }, d(1)], needStop: true, rate: [0.02, 0.3], target: 0.1 },
       },
       {
         id: "3-6",
@@ -142,7 +142,7 @@ export const PLAN: PlanLine[] = [
       {
         id: "5-2",
         name: "Bog Cotton",
-        recipe: { w: 7, h: 8, theme: "hill", ridge: true, needTunnel: true, depots: [d(0), d(1)], needStop: true, crossings: 1, rate: [0.03, 0.8], target: 0.25 },
+        recipe: { w: 7, h: 8, theme: "hill", ridge: true, needTunnel: true, depots: [d(0, 0), d(1)], needStop: true, crossings: 1, rate: [0.02, 0.4], target: 0.15 },
       },
       {
         id: "5-3",

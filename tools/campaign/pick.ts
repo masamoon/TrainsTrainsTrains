@@ -1,7 +1,7 @@
 // Generates candidates for every stop of one line and picks the one closest to the
 // recipe's target solve rate: run.sh pick <line number> [candidates per stop] [only id]
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { type Candidate, candidate, deepen, describe, freeze } from "./gen";
+import { type Candidate, candidate, deepen, describe, freeze, strict } from "./gen";
 import { PLAN } from "./plan";
 
 const line = Number(process.argv[2]);
@@ -18,7 +18,7 @@ for (const st of plan.stops) {
   const t0 = Date.now();
   for (let s = 1; s <= 1500 && found.length < per; s++) {
     const c = candidate(r, s);
-    if (c && deepen(c, r)) found.push(c);
+    if (c && deepen(c, r, undefined, strict(st))) found.push(c);
   }
   const target = r.target ?? 0.2;
   found.sort((a, b) => Math.abs(Math.log(a.rate / target)) - Math.abs(Math.log(b.rate / target)));

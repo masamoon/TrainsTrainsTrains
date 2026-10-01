@@ -1,11 +1,16 @@
-// Freezes the picked levels of the plan into src/core/lines/: run.sh build [line numbers...]
-// Each pick is regenerated from its seed, then searched again harder for a cheaper solution.
+// Freezes the picked levels of the plan into src/core/lines/: run.sh build <line or stop ids...>
+// A line number rebuilds every stop of that line; stop ids (3-4,3-5) rebuild just those and
+// keep the other stops exactly as they are frozen now. Each pick is regenerated from its
+// seed, then searched again harder for a cheaper solution.
 import { readFileSync, writeFileSync } from "node:fs";
+import { LINES } from "../../src/core/levels";
 import { Puzzle, type LevelData } from "../../src/core/puzzle";
-import { candidate, deepen, features, freeze } from "./gen";
+import { candidate, deepen, features, freeze, strict } from "./gen";
 import { PLAN } from "./plan";
 
-const lines = process.argv.slice(2).map(Number);
+const args = process.argv.slice(2).flatMap((a) => a.split(","));
+const ids = new Set(args.filter((a) => a.includes("-")));
+const lines = [...new Set(args.map((a) => Number(a.split("-")[0])))];
 for (const n of lines) {
   const plan = PLAN[n - 3];
   const picks: Record<string, { seed: number; alts: number[] }> = JSON.parse(readFileSync(`tools/campaign/out/picks-${n}.json`, "utf8"));
@@ -13,7 +18,9 @@ for (const n of lines) {
   const missing: string[] = [];
   for (const st of plan.stops) {
     let data: LevelData;
+    const rebuild = ids.size === 0 || ids.has(st.id) || args.includes(String(n));
     if (st.data) data = st.data;
+    else if (!rebuild) data = LINES[n - 1].stops.find((s) => s.id === st.id)!;
     else {
       // The pick first, then its alternatives, until one passes the deeper checks.
       let ok: LevelData | null = null;
@@ -23,7 +30,7 @@ for (const n of lines) {
           console.log(`${st.id}: seed ${seed} no longer generates`);
           continue;
         }
-        if (!deepen(c, st.recipe!, (m) => console.log(`${st.id}: ${m}`))) {
+        if (!deepen(c, st.recipe!, (m) => console.log(`${st.id}: ${m}`), strict(st))) {
           console.log(`${st.id}: seed ${seed} fails the deeper checks, next`);
           continue;
         }
@@ -38,7 +45,7 @@ for (const n of lines) {
       }
       data = ok;
     }
-    levels.push({ id: st.id, name: st.name, ...data, introTitle: st.introTitle, introText: st.introText });
+    levels.push({ ...data, id: st.id, name: st.name, introTitle: st.introTitle, introText: st.introText });
   }
   if (missing.length) {
     console.log(`MISSING ${missing.join(",")}`);

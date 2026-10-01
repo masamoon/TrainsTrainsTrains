@@ -44,12 +44,16 @@ Every push and pull request runs the tests and the build. Pushes to `main` deplo
 Lines 3 to 13 were made with a solver rather than drawn square by square. `tools/campaign/plan.ts` gives each stop a recipe (board size, scenery, depots and their trains, and what the puzzle must need, such as a stop signal or the tunnel).
 `pick` generates boards for a recipe, solves each one many times with randomised routes, and keeps those whose solve rate is near the stop's target difficulty; `build` re-solves the chosen board harder for a tight par and writes `src/core/lines/lineNN.ts`.
 
+Apart from a line's first stop and stops that introduce something, a board is also rejected when it is easier than its par suggests: the obvious answer (every train on its own shortest route, patched with a few stop signals) earns two stars, the stop signals it needs are nearly optional (one tile over par without any), or random attempts solve it more than 30% of the time. `score` runs the same checks on the frozen campaign and flags any stop that fails them.
+
 ```
 tools/campaign/pickall.sh 3 4        # candidates for Lines 3 and 4, into tools/campaign/out
 tools/campaign/run.sh build 3 4      # freeze the picks into src/core/lines
+tools/campaign/run.sh build 3-4,3-5  # replace just these stops, keeping the rest of the line
+tools/campaign/run.sh score 3        # difficulty of every stop on Line 3, flagging easy ones
 npx vite --port 5199 & node tools/campaign/shot.mjs final-3 sheet.png   # contact sheet of a line
 ```
 
-The frozen files are the source of truth: changing the solver or generator changes what a seed produces, so rebuild a line only to replace it.
+The frozen files are the source of truth: changing the solver or generator changes what a seed produces, so rebuild only the stops you mean to replace.
 
 Fonts: Barlow and Barlow Condensed, SIL Open Font License (`public/fonts/OFL.txt`).

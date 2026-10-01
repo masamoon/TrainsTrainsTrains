@@ -1,5 +1,6 @@
 // Screen router. Routes live in the URL hash so the game works under any Pages subpath.
 
+import { initAnalytics, track } from "./analytics";
 import { LEVELS } from "./core/levels";
 import { Save } from "./core/save";
 import "./styles.css";
@@ -24,8 +25,10 @@ function render(): void {
   else if (name === "daily") current = playScreen(save, "daily", 0);
   else current = homeScreen(save);
   app.replaceChildren(current.el);
+  track("$pageview", { screen: name || "home" });
   window.scrollTo(0, 0);
 }
 
+initAnalytics();
 window.addEventListener("hashchange", render);
 render();

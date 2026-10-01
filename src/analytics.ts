@@ -4,8 +4,8 @@
 
 import type { PostHog } from "posthog-js";
 
-// Project API key from the TrainsTrainsTrains PostHog project. It is public by design.
-const POSTHOG_KEY = "";
+// Project API key from Wye's own PostHog organization (EU cloud), kept apart from other games. It is public by design.
+const POSTHOG_KEY = "phc_xLdpxCcVwSjpA2PqpDW3938TVCAtjgTGtTqvwNZTvtJ2";
 const POSTHOG_HOST = "https://eu.i.posthog.com";
 
 type Props = Record<string, string | number | boolean>;

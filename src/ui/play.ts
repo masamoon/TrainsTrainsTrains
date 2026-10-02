@@ -104,7 +104,7 @@ export function playScreen(save: Save, mode: "level" | "daily" | "lab", index: n
 
   function refresh(): void {
     const n = lay.trackCount(pz);
-    trackLabel.textContent = `Track ${n} · par ${pz.par}`;
+    trackLabel.textContent = `Track ${n} · par ${pz.par}` + (pz.deadline ? ` · home by beat ${pz.deadline}` : "");
     starsBox.replaceChildren(starsSvg(n > 0 ? pz.starsFor(n) : 0, 20));
     const running = board.isPlaying();
     const finished = daily && save.dailyFinished(day);
@@ -234,12 +234,18 @@ export function playScreen(save: Save, mode: "level" | "daily" | "lab", index: n
     } else if (ev?.kind === "early") {
       title = "TOO EARLY";
       text = `The ${who} train reached its platform before it opened. Hold it back with a stop signal or a longer route.`;
+    } else if (ev?.kind === "late") {
+      title = "LATE";
+      text = `The ${who} train got home on beat ${ev.t}. Every train has to be home by beat ${pz.deadline}. Let trains run at the same time on separate blocks.`;
+    } else if (ev?.kind === "lost" && pz.blockSignals) {
+      title = "GRIDLOCK";
+      text = `The ${who} train is stuck. Trains are waiting for each other: give each one somewhere to wait off the other's path.`;
     } else if (ev?.kind === "lost") {
       title = "STILL RUNNING";
       text = `The ${who} train never reached a platform. Look for loops and trains stuck in a queue.`;
     }
     const b = openOverlay("card", title);
-    b.append(h("h2", { style: `color:${title === "WRONG PLATFORM" || title === "TOO EARLY" ? "var(--ticket-soft)" : COLORS.red}` }, title), h("p", { style: "margin:0;line-height:1.4" }, text));
+    b.append(h("h2", { style: `color:${title === "WRONG PLATFORM" || title === "TOO EARLY" || title === "LATE" ? "var(--ticket-soft)" : COLORS.red}` }, title), h("p", { style: "margin:0;line-height:1.4" }, text));
     if (isDaily) {
       const rows = save.daily(day).rows;
       b.append(h("p", { class: "muted", style: "font-weight:600" }, `Departure ${rows.length} of ${DEPARTURES}`), resultRows(rows, 22));

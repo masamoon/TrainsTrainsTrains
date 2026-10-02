@@ -5,7 +5,11 @@
 // - Two trains entering the same cell, or passing through each other, crash.
 // - A train that runs off its track derails; one that reaches a platform of another
 //   colour counts as the wrong platform, and so does one that reaches a timed platform
-//   before it opens.
+//   before it opens, or after the level's deadline (levels that have one).
+// - Block signals (levels that use them): a train on a signal waits there until the block
+//   ahead is empty. The block is all the track it could reach from the signal, through
+//   switches and crossings, before the next signals. If two trains want one block on the
+//   same beat, the one that left its depot first goes.
 //
 // The result holds one frame per beat for playback plus a per-train outcome.
 
@@ -15,7 +19,7 @@ import { type Cell, type Dir, type Puzzle, ckey, opp, same, step } from "./puzzl
 const HOLD_BEATS = 2;
 
 export type Outcome = "arrived" | "wrong" | "crashed";
-export type EventKind = "arrived" | "wrong" | "early" | "crash" | "derail" | "lost";
+export type EventKind = "arrived" | "wrong" | "early" | "late" | "crash" | "derail" | "lost";
 
 export interface TrainFrame {
   id: number;
@@ -56,6 +60,7 @@ interface Train {
   rest: number; // beats a goods train still waits before its next move
   goods: boolean;
   end: Outcome | "";
+  waiting?: boolean;
 }
 
 interface Plan {
@@ -64,7 +69,8 @@ interface Plan {
   to: Cell;
   in: Dir;
   out: Dir;
-  end: Outcome | "derailed" | "early" | "";
+  end: Outcome | "derailed" | "early" | "late" | "";
+  waiting?: boolean; // held at a block signal
 }
 
 export function run(pz: Puzzle, lay: Layout): RunResult {
@@ -149,7 +155,7 @@ function frame(trains: Train[]): TrainFrame[] {
       in: tr.in,
       out: tr.out,
       state: tr.state === "done_now" ? (tr.end as Outcome) : "moving",
-      hold: tr.hold,
+      hold: tr.waiting ? 1 : tr.hold,
       goods: tr.goods,
     }));
 }
@@ -171,7 +177,8 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
         const st = pz.stations[si];
         if (st.dir !== entry) plan.end = "derailed";
         else if (st.color !== tr.color) plan.end = "wrong";
-        else plan.end = t + 1 < (st.opens ?? 0) ? "early" : "arrived";
+        else if (t + 1 < (st.opens ?? 0)) plan.end = "early";
+        else plan.end = pz.deadline && t + 1 > pz.deadline ? "late" : "arrived";
       } else if (pz.solid(n) || pz.depotIndexAt(n) >= 0) {
         plan.end = "derailed";
       } else {
@@ -181,6 +188,24 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
       }
     }
     plans.push(plan);
+  }
+
+  if (pz.blockSignals) {
+    // Leaving a signal into an occupied (or just claimed) block: wait at the signal.
+    const claimed = new Set<string>();
+    for (const p of plans) {
+      const here = ckey(p.tr.pos);
+      if (p.stay || p.end !== "" || !lay.stops.has(here)) continue;
+      const block = blockAhead(pz, lay, p.tr.pos, p.tr.out);
+      const busy = plans.some((o) => o !== p && block.has(ckey(o.tr.pos))) || [...block].some((k) => claimed.has(k));
+      if (busy) {
+        p.stay = true;
+        p.to = p.tr.pos;
+        p.in = p.tr.in;
+        p.out = p.tr.out;
+        p.waiting = true;
+      } else for (const k of block) claimed.add(k);
+    }
   }
 
   // Trains queue behind anything standing still in the cell ahead.
@@ -223,23 +248,27 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
 
   plans.forEach((p, i) => {
     const tr = p.tr;
+    tr.waiting = false;
     tr.pos = p.to;
     tr.in = p.in;
     tr.out = p.out;
-    if (p.stay) {
+    if (p.waiting) {
+      tr.hold = 0;
+      tr.waiting = true;
+    } else if (p.stay) {
       if (tr.hold > 0) tr.hold -= 1;
       else if (tr.rest > 0) tr.rest -= 1;
     } else if (crashed.has(i)) {
       finish(tr, "crashed", "crash", t + 1, events);
     } else if (p.end === "derailed") {
       finish(tr, "crashed", "derail", t + 1, events);
-    } else if (p.end === "early") {
-      finish(tr, "wrong", "early", t + 1, events);
+    } else if (p.end === "early" || p.end === "late") {
+      finish(tr, "wrong", p.end, t + 1, events);
     } else if (p.end !== "") {
       finish(tr, p.end, p.end === "crashed" ? "crash" : p.end, t + 1, events);
     } else {
       if (tr.goods) tr.rest = 1;
-      if (lay.stops.has(ckey(tr.pos))) tr.hold = HOLD_BEATS;
+      if (lay.stops.has(ckey(tr.pos)) && !pz.blockSignals) tr.hold = HOLD_BEATS;
     }
   });
 }
@@ -249,4 +278,25 @@ function finish(tr: Train, outcome: Outcome, kind: EventKind, t: number, events:
   tr.end = outcome;
   tr.hold = 0;
   events.push({ t, kind, pos: tr.pos, color: tr.color });
+}
+
+// The block a block signal at `p` guards for a train leaving by side `out`: every cell of
+// track reachable from there without passing another signal.
+export function blockAhead(pz: Puzzle, lay: Layout, p: Cell, out: Dir): Set<string> {
+  const block = new Set<string>();
+  const start = step(p, out);
+  if (!pz.inside(start)) return block;
+  const todo = [start];
+  const origin = ckey(p);
+  while (todo.length) {
+    const c = todo.pop()!;
+    const k = ckey(c);
+    if (block.has(k) || k === origin || lay.stops.has(k)) continue;
+    block.add(k);
+    for (const d of lay.dirsAt(pz, c)) {
+      const n = step(c, d);
+      if (pz.inside(n)) todo.push(n);
+    }
+  }
+  return block;
 }

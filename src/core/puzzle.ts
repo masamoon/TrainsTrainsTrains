@@ -106,6 +106,10 @@ export interface LevelData {
   tunnels?: [[number, number], [number, number]][];
   allowStop?: boolean;
   allowLamp?: boolean;
+  // "block": signals guard the track ahead instead of holding for two beats (lab only for now).
+  signals?: "stop" | "block";
+  // Every train must be home by this beat (lab only for now).
+  deadline?: number;
   introTitle?: string;
   introText?: string;
   par?: number;
@@ -132,6 +136,8 @@ export class Puzzle {
   par = 0;
   allowStop = false;
   allowLamp = false;
+  blockSignals = false;
+  deadline = 0;
   introTitle = "";
   introText = "";
   solution: Solution = { paths: [], stops: [], lamps: [], levers: [] };
@@ -255,6 +261,8 @@ export class Puzzle {
     pz.tunnels = (data.tunnels ?? []).map(([[ax, ay], [bx, by]]) => tunnel(pz, cell(ax, ay), cell(bx, by)));
     pz.allowStop = data.allowStop ?? false;
     pz.allowLamp = data.allowLamp ?? false;
+    pz.blockSignals = data.signals === "block";
+    pz.deadline = data.deadline ?? 0;
     pz.introTitle = data.introTitle ?? "";
     pz.introText = data.introText ?? "";
     const sol = data.solution;

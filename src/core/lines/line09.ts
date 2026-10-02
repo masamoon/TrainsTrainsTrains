@@ -6,19 +6,25 @@ export const FESTIVAL_LINE: Stop[] = [
   {
     id: "9-1",
     name: "Bunting",
-    rows: ["......T", "T......", "...T...", "...T...", "...T...", "...T...", "......T", "T......"],
+    rows: [".......", "T......", ".......", ".......", ".......", ".TTTT..", ".......", "..~...."],
     depots: [
-      { at: [0, 5], dir: "E", trains: [3], every: 3, start: 3 },
-      { at: [1, 7], dir: "N", trains: [0], every: 3, start: 2 },
+      { at: [3, 0], dir: "S", trains: [3, 0], every: 4, start: 0 },
+      { at: [4, 7], dir: "N", trains: [0], every: 3, start: 2 },
     ],
-    stations: [{ at: [0, 2], dir: "E", color: 0 }, { at: [3, 7], dir: "N", color: 3 }],
+    stations: [{ at: [6, 1], dir: "W", color: 0 }, { at: [6, 3], dir: "W", color: 3 }],
     allowStop: true,
     allowLamp: true,
     introTitle: "Fourth colour",
     introText: "Tangerine trains, with a diamond, join the timetable.",
     solution: {
-      paths: [[[1, 7], [1, 6], [1, 5], [1, 4], [1, 3], [1, 2], [0, 2]], [[0, 5], [1, 5], [2, 5], [2, 6], [3, 6], [3, 7]]],
-      stops: [[1, 6]],
+      paths: [
+        [[3, 0], [3, 1], [4, 1], [4, 0], [5, 0], [5, 1], [6, 1]],
+        [[3, 0], [3, 1], [4, 1], [4, 2], [4, 3], [5, 3], [6, 3]],
+        [[4, 7], [4, 6], [5, 6], [5, 5], [5, 4], [5, 3], [5, 2], [5, 1], [6, 1]],
+      ],
+      stops: [[4, 6]],
+      lamps: [[4, 1, 0]],
+      levers: [[4, 1, "N"]],
     },
   },
   {

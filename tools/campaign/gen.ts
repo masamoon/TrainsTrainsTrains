@@ -331,10 +331,10 @@ export function deepen(c: Candidate, r: Recipe, log: (s: string) => void = () =>
   return true;
 }
 
-// Every stop except a line's first and those that introduce something must not be easier
-// than its par suggests.
+// Every stop that doesn't introduce something must not be easier than its par suggests;
+// a recipe can ask for the same of a stop that does (`strict`).
 export function strict(st: { id: string; introTitle?: string; recipe?: Recipe }): boolean {
-  return !!st.recipe?.strict || (!st.introTitle && !st.id.endsWith("-1"));
+  return !!st.recipe?.strict || !st.introTitle;
 }
 
 // Why a board is easier than its par suggests, or "" if it isn't:

@@ -95,7 +95,7 @@ export const PLAN: PlanLine[] = [
       {
         id: "4-3",
         name: "Corn Exchange",
-        recipe: { w: 7, h: 8, theme: "town", depots: [d(0, 1), d(1, 0)], lamps: [1, 3], rate: [0.03, 0.6], target: 0.2 },
+        recipe: { w: 8, h: 8, theme: "town", depots: [d(0, 1), d(1, 0)], lamps: [1, 3], needStop: true, rate: [0.02, 0.3], target: 0.1 },
       },
       {
         id: "4-4",
@@ -287,7 +287,7 @@ export const PLAN: PlanLine[] = [
         name: "Old Spur",
         introTitle: "Work with it",
         introText: "The old line is in the way. Cross it, branch off it, or share it.",
-        recipe: { w: 7, h: 8, theme: "woods", fixed: true, depots: [d(0), d(1)], needStop: true, rate: [0.05, 1], target: 0.4 },
+        recipe: { w: 7, h: 8, theme: "woods", fixed: true, depots: [d(0, 1), d(1)], needStop: true, strict: true, rate: [0.03, 0.3], target: 0.15 },
       },
       {
         id: "8-2",
@@ -337,7 +337,7 @@ export const PLAN: PlanLine[] = [
         name: "Bunting",
         introTitle: "Fourth colour",
         introText: "Tangerine trains, with a diamond, join the timetable.",
-        recipe: { w: 7, h: 8, theme: "woods", depots: [d(3), d(0)], needStop: true, crossings: 1, rate: [0.05, 1], target: 0.4 },
+        recipe: { w: 7, h: 8, theme: "woods", depots: [d(3, 0), d(0)], needStop: true, crossings: 1, strict: true, rate: [0.03, 0.3], target: 0.15 },
       },
       {
         id: "9-2",

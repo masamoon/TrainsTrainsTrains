@@ -23,7 +23,7 @@ for (let i = 0; i < LEVELS.length; i++) {
   const ns = pz.allowStop ? solve(pz, { attempts: 1000, seed: 98, maxStops: 0 }).best?.track ?? Infinity : Infinity;
   const w = work(f, ob.ok, pz.trainCount());
   const why = easyWhy(pz.par, ob, f.stops > 0 ? ns : Infinity, rate);
-  const teaching = !!lv.introTitle || lv.stop === 0 || lv.line < 2;
+  const teaching = !!lv.introTitle || lv.line < 2;
   if (why && !teaching) flagged.push(`${lv.id}(${why})`);
   console.log(`${lv.id.padEnd(5)} ${lv.name.padEnd(22)} par ${String(pz.par).padStart(2)} rate ${(rate * 100).toFixed(0).padStart(3)}% obvious ${ob.ok ? "WORKS" : ob.patched && ob.track <= twoStar(pz.par) ? "PATCH" : "fails"} ${ob.track} work ${w} ${JSON.stringify(f)} trains ${pz.trainCount()} nostop ${ns}${why ? ` EASY:${why}` : ""}${teaching ? " teach" : ""}`);
 }

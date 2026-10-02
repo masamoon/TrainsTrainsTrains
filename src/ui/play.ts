@@ -3,18 +3,20 @@
 import { track } from "../analytics";
 import { DEPARTURES, dateLabel, generate, msUntilTomorrow, numberLabel, today } from "../core/daily";
 import { Layout, type LayoutData } from "../core/layout";
+import { LAB } from "../core/lab";
 import { LEVELS, LINES, loadLevel } from "../core/levels";
-import type { Puzzle } from "../core/puzzle";
+import { Puzzle } from "../core/puzzle";
 import { type Save, shareText } from "../core/save";
 import { type RunResult, run } from "../core/sim";
 import { type Tool, Board } from "./board";
 import { COLORS, LIVERY_NAMES, h, overlay, resultRows, starsSvg, toast, trainSvg } from "./dom";
 import { type Screen, go } from "./nav";
 
-export function playScreen(save: Save, mode: "level" | "daily", index: number): Screen {
+export function playScreen(save: Save, mode: "level" | "daily" | "lab", index: number): Screen {
   const day = today();
   const daily = mode === "daily";
-  const pz: Puzzle = daily ? generate(day) : loadLevel(index);
+  const lab = mode === "lab";
+  const pz: Puzzle = daily ? generate(day) : lab ? Puzzle.fromData(LAB[index]) : loadLevel(index);
   const saved = daily ? save.daily(day).layout : save.levelLayout(pz.id);
   let lay = saved ? Layout.fromData(saved) : new Layout();
   const undo: LayoutData[] = [];
@@ -28,11 +30,11 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
   const bar = h(
     "header",
     { class: "bar" },
-    h("button", { class: "bar-btn", onclick: () => go(daily ? "#/" : "#/map") }, daily ? "‹ Home" : "‹ Map"),
+    h("button", { class: "bar-btn", onclick: () => go(daily || lab ? "#/" : "#/map") }, daily || lab ? "‹ Home" : "‹ Map"),
     h(
       "div",
       { class: "bar-title" },
-      h("div", { class: "eyebrow" }, daily ? `DAILY WYE ${numberLabel(day)}` : `LINE ${LEVELS[index].line + 1} · STOP ${LEVELS[index].stop + 1}`),
+      h("div", { class: "eyebrow" }, daily ? `DAILY WYE ${numberLabel(day)}` : lab ? `PROTOTYPE ${index + 1} OF ${LAB.length}` : `LINE ${LEVELS[index].line + 1} · STOP ${LEVELS[index].stop + 1}`),
       h("h1", {}, daily ? dateLabel(day) : pz.name.toUpperCase()),
     ),
     h("button", { class: "bar-btn bar-right", onclick: clear }, "Clear"),
@@ -181,7 +183,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
         const signals = lay.stops.size + lay.lamps.size;
         track("daily_finished", { day, solved: d.solved, departures: d.rows.length, track: d.track, par: pz.par, signals, streak: save.dailyStats(day).streak });
       }
-    } else {
+    } else if (!lab) {
       track("level_departure", { level: pz.id, success: result.success });
     }
     board.play(result);
@@ -250,6 +252,7 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
   function showLevelSuccess(): void {
     const n = lay.trackCount(pz);
     const s = pz.starsFor(n);
+    if (lab) return showLabSuccess(n, s);
     track("level_completed", { level: pz.id, line: LEVELS[index].line + 1, stop: LEVELS[index].stop + 1, stars: s, track: n, par: pz.par, first: save.stars(pz.id) === 0 });
     save.setStars(pz.id, s);
     const b = openOverlay("card", "All trains home");
@@ -274,6 +277,19 @@ export function playScreen(save: Save, mode: "level" | "daily", index: number): 
       b.append(h("p", { style: "margin:0" }, `That's the whole ${line.name}, and every line so far. Try today's Daily Wye next.`), primary);
     }
     b.append(h("button", { class: "btn btn-ghost", onclick: backToBuilding }, "Improve this stop"));
+    primary.focus();
+  }
+
+  // Prototypes keep no stars: just the result and the way to the next one.
+  function showLabSuccess(n: number, s: number): void {
+    const b = openOverlay("card", "All trains home");
+    b.classList.add("center");
+    const big = starsSvg(s, 46);
+    big.style.alignSelf = "center";
+    b.append(h("h2", {}, "ALL TRAINS HOME"), big, h("p", { class: "muted" }, `Track ${n}, par ${pz.par}.`));
+    const last = index + 1 >= LAB.length;
+    const primary = h("button", { class: "btn btn-primary btn-wide", onclick: () => go(last ? "#/" : `#/lab/${index + 2}`) }, last ? "HOME" : "NEXT PROTOTYPE");
+    b.append(primary, h("button", { class: "btn btn-ghost", onclick: backToBuilding }, "Keep building"));
     primary.focus();
   }
 

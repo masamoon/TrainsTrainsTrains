@@ -84,8 +84,8 @@ export const PLAN: PlanLine[] = [
         id: "4-1",
         name: "Three Ways",
         introTitle: "Three colours",
-        introText: "A colour signal picks out one colour. Chain two switches to split three.",
-        recipe: { w: 7, h: 7, theme: "town", depots: [d(0, 1, 2)], lamps: [2, 2], rate: [0.1, 1], target: 0.5 },
+        introText: "A colour signal picks out one colour. Chain two switches to split three, and join the second blue line on the way.",
+        recipe: { w: 7, h: 8, theme: "town", depots: [d(0, 1, 2), d(1)], lamps: [2, 3], strict: true, rate: [0.03, 0.3], target: 0.12 },
       },
       {
         id: "4-2",

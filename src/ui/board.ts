@@ -5,6 +5,7 @@ import { Layout, type LayoutData } from "../core/layout";
 import {
   type Cell,
   type Depot,
+  DIRS,
   type Dir,
   E,
   N,
@@ -28,6 +29,8 @@ import { COLORS, glyphPath, livery, outcomeColor } from "./dom";
 export type Tool = "track" | "signal" | "erase";
 
 const BEAT_MS = 300;
+const PREVIEW_FADE_MS = 900; // how long a drag's junction highlight lingers after release
+const PREVIEW_BLUE = "31,79,143";
 
 interface Pt {
   x: number;
@@ -55,6 +58,9 @@ export class Board {
   private before: LayoutData | null = null;
   private stroke: Cell[] = []; // cells the current drag has visited
   private laid = new Set<string>(); // edges the current drag has laid
+  private preview: Cell[] = []; // switches the current drag made, highlighted until it ends
+  private previewEnd = 0; // when the drag ended, for fading the highlight
+  private previewRaf = 0;
   private changed = false;
 
   private result: RunResult | null = null;
@@ -81,6 +87,7 @@ export class Board {
 
   setLayout(lay: Layout): void {
     this.lay = lay;
+    this.clearPreview();
     this.draw();
   }
 
@@ -147,6 +154,7 @@ export class Board {
     this.lastCell = this.pressCell;
     this.stroke = [this.pressCell];
     this.laid.clear();
+    this.clearPreview();
     this.before = this.lay.toData();
     this.draw();
   }
@@ -175,7 +183,10 @@ export class Board {
       this.lastCell = next;
       this.stroke.push(next);
     }
-    if (this.tool === "track" && this.laid.size > 0) this.lay.faceStroke(this.pz, this.stroke, this.laid);
+    if (this.tool === "track" && this.laid.size > 0) {
+      this.lay.faceStroke(this.pz, this.stroke, this.laid);
+      this.preview = this.strokeSwitches();
+    }
     this.draw();
   }
 
@@ -184,12 +195,43 @@ export class Board {
     this.pressing = false;
     if (!this.dragged) this.tap(this.pressCell);
     if (this.changed && this.before) this.onEdit(this.before);
+    this.fadePreview();
     this.draw();
   }
 
   private cancel(): void {
     this.pressing = false;
+    this.fadePreview();
     this.draw();
+  }
+
+  // Switches the current drag made or reshaped: three sides, at least one laid by this drag.
+  private strokeSwitches(): Cell[] {
+    const seen = new Map<string, Cell>();
+    for (const p of this.stroke) {
+      if (!this.pz.buildable(p) || this.lay.dirsAt(this.pz, p).length !== 3) continue;
+      if (DIRS.some((d) => this.laid.has(edgeKey(p, d)))) seen.set(ckey(p), p);
+    }
+    return [...seen.values()];
+  }
+
+  // Keeps the junction highlight up briefly after release: a finger usually covers the
+  // last junction while it is being drawn.
+  private fadePreview(): void {
+    if (this.preview.length === 0) return;
+    this.previewEnd = performance.now();
+    const step = (now: number): void => {
+      if (now - this.previewEnd >= PREVIEW_FADE_MS) this.preview = [];
+      this.draw();
+      if (this.preview.length > 0) this.previewRaf = requestAnimationFrame(step);
+    };
+    cancelAnimationFrame(this.previewRaf);
+    this.previewRaf = requestAnimationFrame(step);
+  }
+
+  private clearPreview(): void {
+    cancelAnimationFrame(this.previewRaf);
+    this.preview = [];
   }
 
   private tap(p: Cell): void {
@@ -229,6 +271,7 @@ export class Board {
   // Playback
 
   play(result: RunResult): void {
+    this.clearPreview();
     this.result = result;
     this.playing = true;
     this.editable = false;
@@ -300,13 +343,62 @@ export class Board {
       const y = this.origin.y + this.lastCell.y * cs;
       this.rrect(x + 2, y + 2, cs - 4, cs - 4, cs * 0.16, "rgba(31,79,143,0.08)", "rgba(31,79,143,0.4)", 2);
     }
+    const glow = this.previewAlpha();
+    if (glow > 0) this.drawPreview(glow, false);
     this.drawTrack();
+    if (glow > 0) this.drawPreview(glow, true);
     for (const tn of pz.tunnels) this.drawTunnel(tn);
     pz.depots.forEach((dp, i) => this.drawDepot(dp, i));
     for (const st of pz.stations) this.drawStation(st);
     this.drawSignals();
     if (this.result) this.drawTrains();
     for (const fx of this.effects) this.drawEffect(fx.ev, this.clock - fx.born);
+  }
+
+  private previewAlpha(): number {
+    if (this.preview.length === 0) return 0;
+    if (this.pressing) return 1;
+    return Math.max(0, 1 - (performance.now() - this.previewEnd) / PREVIEW_FADE_MS);
+  }
+
+  // Highlights the junctions a drag is making so their facing reads before the finger
+  // lifts: a glow under both routes of each Y, then chevrons on top pointing from the
+  // stem out along each branch.
+  private drawPreview(alpha: number, chevrons: boolean): void {
+    const { ctx, cellSize: cs } = this;
+    for (const p of this.preview) {
+      const stem = this.lay.stemAt(this.pz, p) as Dir;
+      if (stem < 0) continue;
+      if (!chevrons) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(this.origin.x + p.x * cs, this.origin.y + p.y * cs, cs, cs);
+        ctx.clip();
+        for (const b of this.lay.branchesAt(this.pz, p)) this.piece(p, stem, b, `rgba(${PREVIEW_BLUE},${0.22 * alpha})`, cs * 0.46);
+        ctx.restore();
+        continue;
+      }
+      for (const b of this.lay.branchesAt(this.pz, p)) {
+        const at = this.pathPoint(p, stem, b, 0.78);
+        const ahead = this.pathPoint(p, stem, b, 0.86);
+        const a = Math.atan2(ahead.y - at.y, ahead.x - at.x);
+        const r = cs * 0.13;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        for (const [color, lw] of [
+          [`rgba(244,245,240,${alpha})`, cs * 0.11],
+          [`rgba(${PREVIEW_BLUE},${alpha})`, cs * 0.055],
+        ] as [string, number][]) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = Math.max(2, lw);
+          ctx.beginPath();
+          ctx.moveTo(at.x + Math.cos(a + 2.4) * r, at.y + Math.sin(a + 2.4) * r);
+          ctx.lineTo(at.x, at.y);
+          ctx.lineTo(at.x + Math.cos(a - 2.4) * r, at.y + Math.sin(a - 2.4) * r);
+          ctx.stroke();
+        }
+      }
+    }
   }
 
   private rrect(x: number, y: number, w: number, h: number, r: number, fill: string, stroke?: string, lw = 0): void {

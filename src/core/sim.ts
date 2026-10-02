@@ -300,3 +300,28 @@ export function blockAhead(pz: Puzzle, lay: Layout, p: Cell, out: Dir): Set<stri
   }
   return block;
 }
+
+// Every block on the board: the track split at block signals. Signal squares, depots and
+// platforms belong to no block.
+export function blocks(pz: Puzzle, lay: Layout): string[][] {
+  const seen = new Set<string>();
+  const out: string[][] = [];
+  for (let y = 0; y < pz.h; y++)
+    for (let x = 0; x < pz.w; x++) {
+      const k = ckey({ x, y });
+      if (seen.has(k) || lay.stops.has(k) || !pz.buildable({ x, y }) && !pz.inTunnel({ x, y })) continue;
+      if (lay.dirsAt(pz, { x, y }).length === 0) continue;
+      const block: string[] = [];
+      const todo: Cell[] = [{ x, y }];
+      while (todo.length) {
+        const c = todo.pop()!;
+        const ck = ckey(c);
+        if (seen.has(ck) || lay.stops.has(ck) || !pz.inside(c) || pz.depotIndexAt(c) >= 0 || pz.stationIndexAt(c) >= 0) continue;
+        seen.add(ck);
+        block.push(ck);
+        for (const d of lay.dirsAt(pz, c)) todo.push(step(c, d));
+      }
+      if (block.length) out.push(block);
+    }
+  return out;
+}

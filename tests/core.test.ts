@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { FLOOR_FROM, dateLabel, generate, meetsFloor, today } from "../src/core/daily";
 import { Layout } from "../src/core/layout";
 import { FREE_STOPS, LEVELS, loadLevel } from "../src/core/levels";
-import { type LevelData, Puzzle, W, cell, edgeCells } from "../src/core/puzzle";
+import { E, type LevelData, N, Puzzle, W, cell, dirBetween, edgeCells, edgeKey } from "../src/core/puzzle";
 import { Save, shareText } from "../src/core/save";
 import { run } from "../src/core/sim";
 
@@ -15,6 +15,70 @@ function draw(pz: Puzzle, lay: Layout, cells: [number, number][]): void {
     lay.connect(pz, cell(...cells[i]), cell(...cells[i + 1]));
   }
 }
+
+// Draws one stroke the way a drag does, then faces the switches it made.
+function stroke(pz: Puzzle, lay: Layout, cells: [number, number][]): void {
+  const path = cells.map(([x, y]) => cell(x, y));
+  const laid = new Set<string>();
+  for (let i = 0; i < path.length - 1; i++) {
+    if (lay.connect(pz, path[i], path[i + 1])) laid.add(edgeKey(path[i], dirBetween(path[i], path[i + 1]) as 0));
+  }
+  lay.faceStroke(pz, path, laid);
+}
+
+describe("stroke facing", () => {
+  const open = () => puzzle([".......", ".......", "......."], [], []);
+
+  it("keeps the odd side out when a branch just touches a line", () => {
+    const pz = open();
+    const lay = new Layout();
+    stroke(pz, lay, [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1]]);
+    stroke(pz, lay, [[2, 0], [2, 1]]);
+    expect(lay.stemAt(pz, cell(2, 1))).toBe(N);
+  });
+
+  it("merges a branch onto the line in the direction it was drawn", () => {
+    const pz = open();
+    const lay = new Layout();
+    stroke(pz, lay, [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1]]);
+    // Heading east along the top row, then down onto the line: it should merge eastbound.
+    stroke(pz, lay, [[0, 0], [1, 0], [2, 0], [2, 1]]);
+    expect(lay.stemAt(pz, cell(2, 1))).toBe(E);
+    // Its lever starts on the old line, so trains already running it are not diverted.
+    expect(lay.leverBranch(pz, cell(2, 1))).toBe(W);
+  });
+
+  it("uses the stroke's last turn even a few squares back", () => {
+    const pz = puzzle([".......", ".......", ".......", "......."], [], []);
+    const lay = new Layout();
+    stroke(pz, lay, [[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3]]);
+    stroke(pz, lay, [[5, 0], [4, 0], [3, 0], [3, 1], [3, 2], [3, 3]]);
+    expect(lay.stemAt(pz, cell(3, 3))).toBe(W);
+  });
+
+  it("faces a switch by the line the stroke follows through it", () => {
+    const pz = open();
+    const lay = new Layout();
+    stroke(pz, lay, [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1]]);
+    // Running west along the line, then peeling off up at (2,1).
+    stroke(pz, lay, [[3, 1], [2, 1], [2, 0]]);
+    expect(lay.stemAt(pz, cell(2, 1))).toBe(E);
+    // Coming down onto the line and carrying on west.
+    stroke(pz, lay, [[5, 0], [5, 1], [4, 1]]);
+    expect(lay.stemAt(pz, cell(5, 1))).toBe(W);
+  });
+
+  it("keeps a chosen facing through save and undo", () => {
+    const pz = open();
+    const lay = new Layout();
+    stroke(pz, lay, [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1]]);
+    stroke(pz, lay, [[0, 0], [1, 0], [2, 0], [2, 1]]);
+    const copy = Layout.fromData(JSON.parse(JSON.stringify(lay.toData())));
+    expect(copy.stemAt(pz, cell(2, 1))).toBe(E);
+    copy.clearCell(pz, cell(2, 0));
+    expect(copy.stems.size).toBe(0);
+  });
+});
 
 describe("rules", () => {
   it("delivers a train along a straight line and counts pieces", () => {

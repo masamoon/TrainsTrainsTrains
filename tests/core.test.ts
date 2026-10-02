@@ -5,7 +5,7 @@ import { LAB } from "../src/core/lab";
 import { FREE_STOPS, LEVELS, loadLevel } from "../src/core/levels";
 import { E, type LevelData, N, Puzzle, W, cell, dirBetween, edgeCells, edgeKey } from "../src/core/puzzle";
 import { Save, shareText } from "../src/core/save";
-import { run } from "../src/core/sim";
+import { blocks, run } from "../src/core/sim";
 
 function puzzle(rows: string[], depots: LevelData["depots"], stations: LevelData["stations"], extra: Partial<LevelData> = {}): Puzzle {
   return Puzzle.fromData({ rows, depots, stations, par: 1, ...extra });
@@ -306,6 +306,17 @@ describe("block signals (lab)", () => {
     // One signal where the teal line joins: teal waits until the whole line is clear.
     lay.stops.add("7,3");
     expect(run(pz, lay).success).toBe(true);
+  });
+
+  it("splits the track into blocks at signals", () => {
+    const pz = Puzzle.fromData(section);
+    const lay = pz.solutionLayout();
+    const list = blocks(pz, lay).map((b) => [...b].sort());
+    // West of the loop, the loop's top track between its two signals, and east of the loop.
+    expect(list.length).toBe(3);
+    expect(list.some((b) => b.length === 1 && b[0] === "4,1")).toBe(true);
+    lay.stops.clear();
+    expect(blocks(pz, lay).length).toBe(1);
   });
 
   it("turns away trains that miss the deadline", () => {

@@ -23,12 +23,14 @@ import {
   same,
   vec,
 } from "../core/puzzle";
-import { type RunResult, type SimEvent, type TrainFrame, blockAhead } from "../core/sim";
+import { type RunResult, type SimEvent, type TrainFrame, blockAhead, blocks } from "../core/sim";
 import { COLORS, glyphPath, livery, outcomeColor } from "./dom";
 
 export type Tool = "track" | "signal" | "erase";
 
 const BEAT_MS = 300;
+// Section tints for block signals: soft, and clear of the train liveries and the red lamp.
+const BLOCK_TINTS = ["rgba(31,79,143,0.16)", "rgba(233,162,28,0.22)", "rgba(47,154,76,0.18)", "rgba(117,82,196,0.14)", "rgba(23,138,131,0.16)", "rgba(176,157,116,0.3)"];
 const PREVIEW_FADE_MS = 900; // how long a drag's junction highlight lingers after release
 const PREVIEW_BLUE = "31,79,143";
 
@@ -343,6 +345,7 @@ export class Board {
       const y = this.origin.y + this.lastCell.y * cs;
       this.rrect(x + 2, y + 2, cs - 4, cs - 4, cs * 0.16, "rgba(31,79,143,0.08)", "rgba(31,79,143,0.4)", 2);
     }
+    if (pz.blockSignals) this.drawBlocks();
     if (this.result && pz.blockSignals) this.drawBusyBlocks();
     const glow = this.previewAlpha();
     if (glow > 0) this.drawPreview(glow, false);
@@ -712,6 +715,19 @@ export class Board {
     if (!this.result) return [];
     const i = Math.min(Math.floor((this.clock * 1000) / BEAT_MS), this.result.frames.length - 1);
     return this.result.frames[Math.max(0, i)];
+  }
+
+  // Block signals: each block gets its own tint, as a signal box diagram shades its sections,
+  // so the player sees where one ends while laying signals.
+  private drawBlocks(): void {
+    const cs = this.cellSize;
+    blocks(this.pz, this.lay).forEach((b, i) => {
+      const fill = BLOCK_TINTS[i % BLOCK_TINTS.length];
+      for (const k of b) {
+        const p = parseCell(k);
+        this.rrect(this.origin.x + p.x * cs + 2, this.origin.y + p.y * cs + 2, cs - 4, cs - 4, cs * 0.14, fill);
+      }
+    });
   }
 
   // Block signals: tint the block a waiting train is waiting for, so the reason shows.

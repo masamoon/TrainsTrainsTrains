@@ -7,6 +7,7 @@ import { run } from "../../src/core/sim";
 import { ascii } from "../campaign/solver";
 import { play } from "./player";
 import { reference, stopSets } from "./proto";
+import { brainless } from "./recipes";
 
 type P = [number, number];
 type Proto = { data: LevelData & { id: string; name: string }; paths: P[][]; stops?: P[]; why: string; pathsFrom?: string };
@@ -215,6 +216,15 @@ for (const pr of PROTOS) {
   const lay = reference(pz, paths, stops);
   const res = run(pz, lay);
   if (!res.success) throw new Error(`${pr.data.name}: reference fails`);
+  if (pz.blockSignals) {
+    // No recipe may solve it, and the deadline must be within two beats of the best run.
+    const easy = brainless(pz, lay);
+    if (easy) throw new Error(`${pr.data.name}: solved without thinking (${easy})`);
+    const loose = Puzzle.fromData({ ...pr.data, deadline: undefined, par: 1 });
+    const best = Math.min(...stopSets(loose, paths, 4, 5000).map((st) => run(loose, reference(loose, paths, st.map(xy))).beats));
+    if (pz.deadline > best + 2) throw new Error(`${pr.data.name}: deadline ${pz.deadline} is loose (best run ${best})`);
+    console.log(`${pr.data.id}: no recipe solves it; deadline ${pz.deadline}, best run ${best}`);
+  }
   const par = lay.trackCount(pz);
   pz.par = par;
   const model = play(pz, 12);

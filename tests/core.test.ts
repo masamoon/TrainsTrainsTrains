@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FLOOR_FROM, dateLabel, generate, meetsFloor, today } from "../src/core/daily";
 import { Layout } from "../src/core/layout";
+import { LAB } from "../src/core/lab";
 import { FREE_STOPS, LEVELS, loadLevel } from "../src/core/levels";
 import { E, type LevelData, N, Puzzle, W, cell, dirBetween, edgeCells, edgeKey } from "../src/core/puzzle";
 import { Save, shareText } from "../src/core/save";
@@ -260,6 +261,37 @@ describe("campaign", () => {
         expect(run(pz, bare).success).toBe(false);
       }
     });
+  });
+});
+
+describe("lab prototypes", () => {
+  LAB.forEach((data) => {
+    it(`${data.id} ${data.name}: reference solution solves for three stars`, () => {
+      const pz = Puzzle.fromData(data);
+      const lay = pz.solutionLayout();
+      for (const key of lay.edges) for (const c of edgeCells(key)) expect(pz.buildable(c), `${data.id} ${key}`).toBe(true);
+      expect(run(pz, lay).success).toBe(true);
+      expect(pz.starsFor(lay.trackCount(pz))).toBe(3);
+      const bare = lay.clone();
+      bare.stops.clear();
+      expect(run(pz, bare).success).toBe(false);
+    });
+  });
+
+  it("builds the passing loop of Waiting Room by drawing it", () => {
+    const pz = Puzzle.fromData(LAB[0]);
+    const lay = new Layout();
+    stroke(pz, lay, [[1, 1], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2], [7, 2], [7, 1]]);
+    stroke(pz, lay, [[1, 2], [1, 3]]);
+    stroke(pz, lay, [[7, 2], [7, 3]]);
+    stroke(pz, lay, [[3, 2], [3, 1], [4, 1], [5, 1], [5, 2]]);
+    lay.levers.set("3,2", N);
+    lay.levers.set("5,2", W);
+    lay.levers.set("1,2", 2);
+    lay.levers.set("7,2", N);
+    lay.stops.add("3,1");
+    lay.stops.add("4,1");
+    expect(run(pz, lay).success).toBe(true);
   });
 });
 

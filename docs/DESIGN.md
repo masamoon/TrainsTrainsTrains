@@ -141,3 +141,9 @@ Every day has to need at least one signal. The generator keeps trying boards unt
 
 No. 0001 and No. 0002 came out before the floor and are generated exactly as they were. The unit tests check the floor on 400 days.
 The solver doesn't try lines that share track through switches or loop over themselves; both cost extra track, so within the budget they rarely matter.
+
+## Difficulty lab
+
+`tools/lab/player.ts` models how a person solves a board: draw the short way, Depart, fix the spot where it went wrong, repeat.
+A board it solves in one or two Departs is easy however rare a random solution is. `run.sh ../lab/campaign` plays every stop this way.
+Prototype boards built to defeat it live in `src/core/lab.ts` (built by `tools/lab/build.ts`) and play at `#/lab/1` onward. They keep no stars and aren't linked from the game.

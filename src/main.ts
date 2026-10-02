@@ -1,6 +1,7 @@
 // Screen router. Routes live in the URL hash so the game works under any Pages subpath.
 
 import { initAnalytics, track } from "./analytics";
+import { LAB } from "./core/lab";
 import { LEVELS, isOpen } from "./core/levels";
 import { Save } from "./core/save";
 import "./styles.css";
@@ -23,11 +24,13 @@ function render(): void {
   else if (name === "level" && Number.isInteger(index) && index >= 0 && index < LEVELS.length && isOpen(index, save.nextLevelIndex()))
     current = playScreen(save, "level", index);
   else if (name === "daily") current = playScreen(save, "daily", 0);
+  // Difficulty prototypes for playtesting; only reachable by link.
+  else if (name === "lab" && Number.isInteger(index) && index >= 0 && index < LAB.length) current = playScreen(save, "lab", index);
   else current = homeScreen(save);
   app.replaceChildren(current.el);
   const where: Record<string, string | number> = { screen: name || "home" };
   if (name === "level" && LEVELS[index]) where.level = LEVELS[index].id;
-  track("$pageview", where);
+  if (name !== "lab") track("$pageview", where);
   window.scrollTo(0, 0);
 }
 

@@ -16,6 +16,7 @@ import {
   ckey,
   dirBetween,
   edgeCells,
+  edgeKey,
   opp,
   parseCell,
   same,
@@ -52,6 +53,8 @@ export class Board {
   private pressCell: Cell = { x: -1, y: -1 };
   private lastCell: Cell = { x: -1, y: -1 };
   private before: LayoutData | null = null;
+  private stroke: Cell[] = []; // cells the current drag has visited
+  private laid = new Set<string>(); // edges the current drag has laid
   private changed = false;
 
   private result: RunResult | null = null;
@@ -142,6 +145,8 @@ export class Board {
     this.changed = false;
     this.pressCell = this.cellAt(e);
     this.lastCell = this.pressCell;
+    this.stroke = [this.pressCell];
+    this.laid.clear();
     this.before = this.lay.toData();
     this.draw();
   }
@@ -161,10 +166,16 @@ export class Board {
         Math.abs(dx) >= Math.abs(dy)
           ? { x: this.lastCell.x + Math.sign(dx), y: this.lastCell.y }
           : { x: this.lastCell.x, y: this.lastCell.y + Math.sign(dy) };
-      if (this.tool === "track") this.changed = this.lay.connect(this.pz, this.lastCell, next) || this.changed;
-      else if (this.tool === "erase") this.changed = this.lay.clearCell(this.pz, next) || this.changed;
+      if (this.tool === "track") {
+        if (this.lay.connect(this.pz, this.lastCell, next)) {
+          this.changed = true;
+          this.laid.add(edgeKey(this.lastCell, dirBetween(this.lastCell, next) as Dir));
+        }
+      } else if (this.tool === "erase") this.changed = this.lay.clearCell(this.pz, next) || this.changed;
       this.lastCell = next;
+      this.stroke.push(next);
     }
+    if (this.tool === "track" && this.laid.size > 0) this.lay.faceStroke(this.pz, this.stroke, this.laid);
     this.draw();
   }
 
@@ -454,9 +465,9 @@ export class Board {
       } else if (dirs.length === 2) {
         this.piece(p, dirs[0], dirs[1], COLORS.ink, w);
       } else if (dirs.length === 3) {
-        const stem = Layout.switchStem(dirs) as Dir;
+        const stem = lay.stemAt(pz, p) as Dir;
         const lever = lay.leverBranch(pz, p) as Dir;
-        for (const b of Layout.switchBranches(dirs)) if (b !== lever) this.piece(p, stem, b, "rgba(29,38,34,0.22)", w);
+        for (const b of lay.branchesAt(pz, p)) if (b !== lever) this.piece(p, stem, b, "rgba(29,38,34,0.22)", w);
         this.piece(p, stem, lever, COLORS.ink, w);
         this.circle(this.pathPoint(p, stem, lever, 0.72), w * 0.22, COLORS.lit);
       } else if (dirs.length === 4) {

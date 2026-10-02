@@ -27,6 +27,7 @@ export interface Recipe {
   fixed?: boolean; // turn one route of the cheapest solution into existing track
   timed?: number; // platforms that open late
   needStop?: boolean; // no 3-star solution without a stop signal
+  strict?: boolean; // apply the easiness checks even though the stop introduces something
   needTunnel?: boolean; // the cheapest solution uses the tunnel
   rate?: [number, number]; // share of random solver attempts that succeed
   target?: number; // preferred rate when picking among candidates
@@ -332,8 +333,8 @@ export function deepen(c: Candidate, r: Recipe, log: (s: string) => void = () =>
 
 // Every stop except a line's first and those that introduce something must not be easier
 // than its par suggests.
-export function strict(st: { id: string; introTitle?: string }): boolean {
-  return !st.introTitle && !st.id.endsWith("-1");
+export function strict(st: { id: string; introTitle?: string; recipe?: Recipe }): boolean {
+  return !!st.recipe?.strict || (!st.introTitle && !st.id.endsWith("-1"));
 }
 
 // Why a board is easier than its par suggests, or "" if it isn't:

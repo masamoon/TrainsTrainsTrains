@@ -147,3 +147,5 @@ The solver doesn't try lines that share track through switches or loop over them
 `tools/lab/player.ts` models how a person solves a board: draw the short way, Depart, fix the spot where it went wrong, repeat.
 A board it solves in one or two Departs is easy however rare a random solution is. `run.sh ../lab/campaign` plays every stop this way.
 Prototype boards built to defeat it live in `src/core/lab.ts` (built by `tools/lab/build.ts`) and play at `#/lab/1` onward. They keep no stars and aren't linked from the game.
+Lab 5 to 7 try **block signals** (`signals: "block"` in level data, lab only): a train on a signal waits until the block ahead, all the track up to the next signals, is empty; two trains wanting one block on the same beat go in departure order.
+Without pressure one signal at a depot serialises everything, so these boards also set a **deadline** (`deadline`: every train home by that beat), which turns the puzzle into splitting the line into blocks so trains can run at once.

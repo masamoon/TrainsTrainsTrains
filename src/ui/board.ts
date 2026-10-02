@@ -23,7 +23,7 @@ import {
   same,
   vec,
 } from "../core/puzzle";
-import type { RunResult, SimEvent, TrainFrame } from "../core/sim";
+import { type RunResult, type SimEvent, type TrainFrame, blockAhead } from "../core/sim";
 import { COLORS, glyphPath, livery, outcomeColor } from "./dom";
 
 export type Tool = "track" | "signal" | "erase";
@@ -343,6 +343,7 @@ export class Board {
       const y = this.origin.y + this.lastCell.y * cs;
       this.rrect(x + 2, y + 2, cs - 4, cs - 4, cs * 0.16, "rgba(31,79,143,0.08)", "rgba(31,79,143,0.4)", 2);
     }
+    if (this.result && pz.blockSignals) this.drawBusyBlocks();
     const glow = this.previewAlpha();
     if (glow > 0) this.drawPreview(glow, false);
     this.drawTrack();
@@ -713,6 +714,20 @@ export class Board {
     return this.result.frames[Math.max(0, i)];
   }
 
+  // Block signals: tint the block a waiting train is waiting for, so the reason shows.
+  private drawBusyBlocks(): void {
+    const cs = this.cellSize;
+    const cells = new Set<string>();
+    for (const t of this.currentFrame()) {
+      if (t.state !== "moving" || t.hold <= 0 || !this.lay.stops.has(ckey(t.pos))) continue;
+      for (const k of blockAhead(this.pz, this.lay, t.pos, t.out)) cells.add(k);
+    }
+    for (const k of cells) {
+      const p = parseCell(k);
+      this.rrect(this.origin.x + p.x * cs + 2, this.origin.y + p.y * cs + 2, cs - 4, cs - 4, cs * 0.14, "rgba(216,67,46,0.12)");
+    }
+  }
+
   private drawSignals(): void {
     const { pz, lay } = this;
     const cs = this.cellSize;
@@ -735,7 +750,9 @@ export class Board {
       }
       this.rrect(hc.x - cs * 0.13, hc.y - cs * 0.17, cs * 0.26, cs * 0.34, cs * 0.08, COLORS.bezel);
       const lit = !this.result || holding.has(k);
-      this.circle(hc, cs * 0.075, lit ? COLORS.red : "rgba(216,67,46,0.45)");
+      // A block signal shows green while its block is clear during a run.
+      const off = pz.blockSignals ? COLORS.green : "rgba(216,67,46,0.45)";
+      this.circle(hc, cs * 0.075, lit ? COLORS.red : off);
     }
     for (const [k, color] of lay.lamps) {
       const p = parseCell(k);
@@ -833,7 +850,7 @@ export class Board {
     const { ctx } = this;
     const cs = this.cellSize;
     const c = this.center(ev.pos);
-    const color = outcomeColor(ev.kind === "arrived" ? "arrived" : ev.kind === "wrong" || ev.kind === "early" ? "wrong" : "crashed");
+    const color = outcomeColor(ev.kind === "arrived" ? "arrived" : ev.kind === "wrong" || ev.kind === "early" || ev.kind === "late" ? "wrong" : "crashed");
     ctx.save();
     ctx.globalAlpha = Math.max(0, 1 - age / 1.6);
     ctx.strokeStyle = color;

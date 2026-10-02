@@ -295,6 +295,30 @@ describe("lab prototypes", () => {
   });
 });
 
+describe("block signals (lab)", () => {
+  const section = LAB.find((l) => l.id === "lab-5")!;
+
+  it("holds a train until the block ahead is empty", () => {
+    const pz = Puzzle.fromData({ ...section, deadline: undefined });
+    const lay = pz.solutionLayout();
+    lay.stops.clear();
+    expect(run(pz, lay).success).toBe(false);
+    // One signal where the teal line joins: teal waits until the whole line is clear.
+    lay.stops.add("7,3");
+    expect(run(pz, lay).success).toBe(true);
+  });
+
+  it("turns away trains that miss the deadline", () => {
+    const pz = Puzzle.fromData(section);
+    const lay = pz.solutionLayout();
+    lay.stops.clear();
+    lay.stops.add("7,3");
+    const res = run(pz, lay);
+    expect(res.success).toBe(false);
+    expect(res.events.some((e) => e.kind === "late")).toBe(true);
+  });
+});
+
 describe("lines", () => {
   it("gives every stop a unique id", () => {
     expect(new Set(LEVELS.map((lv) => lv.id)).size).toBe(LEVELS.length);

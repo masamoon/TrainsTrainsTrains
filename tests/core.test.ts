@@ -3,7 +3,7 @@ import { FLOOR_FROM, dateLabel, generate, meetsFloor, today } from "../src/core/
 import { Layout } from "../src/core/layout";
 import { LAB } from "../src/core/lab";
 import { FREE_STOPS, LEVELS, loadLevel } from "../src/core/levels";
-import { E, type LevelData, N, Puzzle, W, cell, dirBetween, edgeCells, edgeKey } from "../src/core/puzzle";
+import { E, type LevelData, N, Puzzle, S, W, cell, ckey, dirBetween, edgeCells, edgeKey } from "../src/core/puzzle";
 import { Save, shareText } from "../src/core/save";
 import { blocks, run } from "../src/core/sim";
 
@@ -312,11 +312,29 @@ describe("block signals (lab)", () => {
     const pz = Puzzle.fromData(section);
     const lay = pz.solutionLayout();
     const list = blocks(pz, lay).map((b) => [...b].sort());
-    // West of the loop, the loop's top track between its two signals, and east of the loop.
-    expect(list.length).toBe(3);
-    expect(list.some((b) => b.length === 1 && b[0] === "4,1")).toBe(true);
+    // West of the signals and east of them. A one-way signal's square joins the block
+    // behind it, so a train waiting there still occupies that block.
+    expect(list.length).toBe(2);
+    const west = list.find((b) => b.includes("3,2"))!;
+    expect(west).toContain("5,1");
+    expect(west).toContain("4,2");
     lay.stops.clear();
     expect(blocks(pz, lay).length).toBe(1);
+  });
+
+  it("holds only trains heading the way a one-way signal faces", () => {
+    const pz = Puzzle.fromData(section);
+    const lay = pz.solutionLayout();
+    expect(lay.facing.get("5,1")).toBe(S);
+    expect(lay.facing.get("4,2")).toBe(E);
+    const res = run(pz, lay);
+    expect(res.success).toBe(true);
+    const held = (k: string) => res.frames.some((f) => f.some((t) => t.hold > 0 && ckey(t.pos) === k));
+    // Rose waits in the loop; teal runs west past the eastward signal without stopping.
+    expect(held("5,1")).toBe(true);
+    expect(held("4,2")).toBe(false);
+    lay.facing.set("4,2", W);
+    expect(run(pz, lay).success).toBe(false);
   });
 
   it("turns away trains that miss the deadline", () => {

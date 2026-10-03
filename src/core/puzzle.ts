@@ -54,6 +54,7 @@ export interface Solution {
   lamps: [Cell, number][];
   levers: [Cell, Dir][];
   stems?: [Cell, Dir][];
+  facing?: [Cell, Dir][];
 }
 
 export const cell = (x: number, y: number): Cell => ({ x, y });
@@ -120,6 +121,8 @@ export interface LevelData {
     levers?: [number, number, string][];
     // Switches whose stem isn't the odd side out (a line running straight through).
     stems?: [number, number, string][];
+    // One-way block signals: the way each one faces (the side a train it holds leaves by).
+    facing?: [number, number, string][];
   };
 }
 
@@ -231,6 +234,7 @@ export class Puzzle {
     for (const [p, c] of this.solution.lamps) lay.lamps.set(ckey(p), c);
     for (const [p, d] of this.solution.stems ?? []) lay.stems.set(ckey(p), d);
     for (const [p, d] of this.solution.levers) lay.levers.set(ckey(p), d);
+    for (const [p, d] of this.solution.facing ?? []) lay.facing.set(ckey(p), d);
     return lay;
   }
 
@@ -273,6 +277,7 @@ export class Puzzle {
         lamps: (sol.lamps ?? []).map(([x, y, c]) => [cell(x, y), c]),
         levers: (sol.levers ?? []).map(([x, y, d]) => [cell(x, y), dirChar(d)]),
         stems: (sol.stems ?? []).map(([x, y, d]) => [cell(x, y), dirChar(d)]),
+        facing: (sol.facing ?? []).map(([x, y, d]) => [cell(x, y), dirChar(d)]),
       };
     }
     pz.rebuild();

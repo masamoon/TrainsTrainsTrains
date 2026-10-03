@@ -7,8 +7,17 @@ import { run } from "../../src/core/sim";
 import { ascii } from "../campaign/solver";
 import { type Step, build, lastBad, play } from "./player";
 
-export function reference(pz: Puzzle, paths: [number, number][][], stops: [number, number][] = []): Layout {
-  const routes = paths.map((p) => {
+// A signal: its square, plus the way it faces when it is a one-way block signal (NESW).
+export type Sig = [number, number] | [number, number, string];
+export const sigKey = ([x, y, f]: Sig): string => ckey({ x, y }) + (f ? "@" + f : "");
+export const parseSig = (k: string): Sig => {
+  const [c, f] = k.split("@");
+  const [x, y] = c.split(",").map(Number);
+  return f ? [x, y, f] : [x, y];
+};
+
+export function routesOf(pz: Puzzle, paths: [number, number][][]) {
+  return paths.map((p) => {
     const cells: Cell[] = p.map(([x, y]) => ({ x, y }));
     const depot = pz.depotIndexAt(cells[0]);
     const station = pz.stationIndexAt(cells[cells.length - 1]);
@@ -21,12 +30,16 @@ export function reference(pz: Puzzle, paths: [number, number][][], stops: [numbe
     for (const s of path) if ((s.in as number) < 0 || (s.out as number) < 0) throw new Error("path not continuous");
     return { d: { depot, color: pz.stations[station].color, stations: [station] }, path };
   });
-  const lay = build(pz, routes, new Set(stops.map(([x, y]) => ckey({ x, y }))));
+}
+
+export function reference(pz: Puzzle, paths: [number, number][][], stops: Sig[] = []): Layout {
+  const routes = routesOf(pz, paths);
+  const lay = build(pz, routes, new Set(stops.map(sigKey)));
   if (!lay) throw new Error(`reference can't be built (trouble at ${lastBad})`);
   return lay;
 }
 
-export function check(data: LevelData, paths: [number, number][][], stops: [number, number][] = [], verbose = true) {
+export function check(data: LevelData, paths: [number, number][][], stops: Sig[] = [], verbose = true) {
   const pz = Puzzle.fromData({ ...data, par: 1 });
   const lay = reference(pz, paths, stops);
   pz.par = lay.trackCount(pz);
@@ -43,30 +56,48 @@ export function check(data: LevelData, paths: [number, number][][], stops: [numb
 }
 
 // Every set of up to `max` stop signals (on plain track along the paths) that makes the
-// paths work. Empty when the track itself can't be made to work with stops alone.
+// paths work. Empty when the track itself can't be made to work with stops alone. On
+// block-signal boards each square can hold a signal facing either way or both ways; keys
+// are "x,y" or "x,y@D" (see sigKey).
 export function stopSets(pz: Puzzle, paths: [number, number][][], max = 3, limit = 50): string[][] {
   const lay0 = reference(pz, paths);
-  const cand = [...new Set(paths.flat().map(([x, y]) => ckey({ x, y })))].filter((k) => {
+  const cells = [...new Set(paths.flat().map(([x, y]) => ckey({ x, y })))].filter((k) => {
     const [x, y] = k.split(",").map(Number);
     return pz.buildable({ x, y }) && lay0.dirsAt(pz, { x, y }).length === 2;
   });
+  const cand: string[][] = cells.map((k) => {
+    const [x, y] = k.split(",").map(Number);
+    return pz.blockSignals ? [k, ...lay0.dirsAt(pz, { x, y }).map((d) => `${k}@${"NESW"[d]}`)] : [k];
+  });
+  // Smallest sets first, so the limit only cuts off the largest. A set that works is not
+  // extended further.
   const out: string[][] = [];
+  const works = new Set<string>();
   const pick: string[] = [];
-  const go = (from: number) => {
+  const go = (from: number, size: number) => {
     if (out.length >= limit) return;
-    const lay = lay0.clone();
-    for (const k of pick) lay.stops.add(k);
-    if (run(pz, lay).success) {
-      out.push([...pick]);
+    if (pick.length === size) {
+      const lay = lay0.clone();
+      for (const s of pick) {
+        const [k, f] = s.split("@");
+        lay.stops.add(k);
+        if (f) lay.facing.set(k, "NESW".indexOf(f) as Dir);
+      }
+      if (run(pz, lay).success) {
+        out.push([...pick]);
+        works.add(pick.join(" "));
+      }
       return;
     }
-    if (pick.length >= max) return;
     for (let i = from; i < cand.length; i++) {
-      pick.push(cand[i]);
-      go(i + 1);
-      pick.pop();
+      for (const v of cand[i]) {
+        pick.push(v);
+        // Skip extensions of a set that already works.
+        if (!works.has(pick.join(" "))) go(i + 1, size);
+        pick.pop();
+      }
     }
   };
-  go(0);
+  for (let size = 0; size <= max; size++) go(0, size);
   return out;
 }

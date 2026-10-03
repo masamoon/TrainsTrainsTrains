@@ -12,6 +12,7 @@ export interface LayoutData {
   lamps: [string, number][];
   stops: string[];
   stems?: [string, number][];
+  facing?: [string, number][];
 }
 
 export class Layout {
@@ -20,6 +21,9 @@ export class Layout {
   lamps = new Map<string, number>();
   stops = new Set<string>();
   stems = new Map<string, Dir>();
+  // One-way block signals: the side a train must be leaving by for the signal to hold it.
+  // A signal with no facing holds trains both ways.
+  facing = new Map<string, Dir>();
 
   dirsAt(pz: Puzzle, p: Cell): Dir[] {
     const fixed = pz.staticEdges();
@@ -27,6 +31,13 @@ export class Layout {
       const k = edgeKey(p, d);
       return this.edges.has(k) || fixed.has(k);
     });
+  }
+
+  // Whether the signal at `k` (if any) holds a train leaving its square by side `out`.
+  governs(k: string, out: Dir): boolean {
+    if (!this.stops.has(k)) return false;
+    const f = this.facing.get(k);
+    return f === undefined || f === out;
   }
 
   playerDirsAt(p: Cell): Dir[] {
@@ -174,6 +185,7 @@ export class Layout {
     changed = this.levers.delete(k) || changed;
     changed = this.lamps.delete(k) || changed;
     changed = this.stops.delete(k) || changed;
+    this.facing.delete(k);
     this.stems.delete(k);
     return changed;
   }
@@ -188,6 +200,8 @@ export class Layout {
       this.stems.delete(k);
     }
     if (n !== 2) this.stops.delete(k);
+    const f = this.facing.get(k);
+    if (!this.stops.has(k) || (f !== undefined && !this.dirsAt(pz, p).includes(f))) this.facing.delete(k);
   }
 
   // Track pieces the player placed: every buildable cell with at least one drawn edge.
@@ -210,6 +224,7 @@ export class Layout {
       lamps: [...this.lamps],
       stops: [...this.stops],
       stems: [...this.stems],
+      facing: [...this.facing],
     };
   }
 
@@ -221,6 +236,7 @@ export class Layout {
     for (const [k, c] of data.lamps ?? []) lay.lamps.set(k, c);
     for (const k of data.stops ?? []) lay.stops.add(k);
     for (const [k, d] of data.stems ?? []) lay.stems.set(k, d as Dir);
+    for (const [k, d] of data.facing ?? []) lay.facing.set(k, d as Dir);
     return lay;
   }
 }

@@ -14,7 +14,7 @@
 // The result holds one frame per beat for playback plus a per-train outcome.
 
 import type { Layout } from "./layout";
-import { type Cell, type Dir, type Puzzle, ckey, opp, same, step } from "./puzzle";
+import { type Cell, type Dir, type Puzzle, ckey, opp, parseCell, same, step } from "./puzzle";
 
 const HOLD_BEATS = 2;
 
@@ -195,7 +195,7 @@ function stepBeat(pz: Puzzle, lay: Layout, trains: Train[], t: number, events: S
     const claimed = new Set<string>();
     for (const p of plans) {
       const here = ckey(p.tr.pos);
-      if (p.stay || p.end !== "" || !lay.stops.has(here)) continue;
+      if (p.stay || p.end !== "" || !lay.governs(here, p.tr.out)) continue;
       const block = blockAhead(pz, lay, p.tr.pos, p.tr.out);
       const busy = plans.some((o) => o !== p && block.has(ckey(o.tr.pos))) || [...block].some((k) => claimed.has(k));
       if (busy) {
@@ -280,32 +280,43 @@ function finish(tr: Train, outcome: Outcome, kind: EventKind, t: number, events:
   events.push({ t, kind, pos: tr.pos, color: tr.color });
 }
 
+// The side trains enter a one-way signal's square by (-1 for a both-ways signal or none).
+// As in a signal box, a one-way signal's square belongs to the block behind it: a train
+// waiting at the signal still occupies that block.
+function rearOf(pz: Puzzle, lay: Layout, k: string): Dir | -1 {
+  const f = lay.facing.get(k);
+  if (f === undefined || !lay.stops.has(k)) return -1;
+  return lay.dirsAt(pz, parseCell(k)).find((d) => d !== f) ?? -1;
+}
+
 // The block a block signal at `p` guards for a train leaving by side `out`: every cell of
-// track reachable from there without passing another signal.
+// track reachable from there without passing another signal, plus the squares of one-way
+// signals reached from behind. Depots and platforms are not part of any block.
 export function blockAhead(pz: Puzzle, lay: Layout, p: Cell, out: Dir): Set<string> {
   const block = new Set<string>();
-  const start = step(p, out);
-  if (!pz.inside(start)) return block;
-  const todo = [start];
   const origin = ckey(p);
+  const todo: [Cell, Dir][] = [[step(p, out), opp(out)]];
   while (todo.length) {
-    const c = todo.pop()!;
+    const [c, entry] = todo.pop()!;
     const k = ckey(c);
-    if (block.has(k) || k === origin || lay.stops.has(k)) continue;
-    block.add(k);
-    for (const d of lay.dirsAt(pz, c)) {
-      const n = step(c, d);
-      if (pz.inside(n)) todo.push(n);
+    if (!pz.inside(c) || block.has(k) || k === origin) continue;
+    if (pz.depotIndexAt(c) >= 0 || pz.stationIndexAt(c) >= 0) continue;
+    if (lay.stops.has(k)) {
+      if (rearOf(pz, lay, k) === entry) block.add(k);
+      continue;
     }
+    block.add(k);
+    for (const d of lay.dirsAt(pz, c)) todo.push([step(c, d), opp(d)]);
   }
   return block;
 }
 
-// Every block on the board: the track split at block signals. Signal squares, depots and
-// platforms belong to no block.
+// Every block on the board: the track split at block signals. A one-way signal's square
+// joins the block behind it; both-ways signal squares, depots and platforms belong to none.
 export function blocks(pz: Puzzle, lay: Layout): string[][] {
   const seen = new Set<string>();
   const out: string[][] = [];
+  const index = new Map<string, number>();
   for (let y = 0; y < pz.h; y++)
     for (let x = 0; x < pz.w; x++) {
       const k = ckey({ x, y });
@@ -319,9 +330,18 @@ export function blocks(pz: Puzzle, lay: Layout): string[][] {
         if (seen.has(ck) || lay.stops.has(ck) || !pz.inside(c) || pz.depotIndexAt(c) >= 0 || pz.stationIndexAt(c) >= 0) continue;
         seen.add(ck);
         block.push(ck);
+        index.set(ck, out.length);
         for (const d of lay.dirsAt(pz, c)) todo.push(step(c, d));
       }
       if (block.length) out.push(block);
     }
+  // One-way signals join the block behind them, or stand alone (say, just outside a depot).
+  for (const k of lay.stops) {
+    const r = rearOf(pz, lay, k);
+    if (r < 0) continue;
+    const i = index.get(ckey(step(parseCell(k), r as Dir)));
+    if (i !== undefined) out[i].push(k);
+    else out.push([k]);
+  }
   return out;
 }

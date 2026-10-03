@@ -7,7 +7,7 @@
 // Signals: just outside every depot, before every junction, at both ends of every stretch, on every other square,
 // on every square, or none at all.
 import { Layout } from "../../src/core/layout";
-import { type Cell, type Puzzle, ckey, edgeKey, step } from "../../src/core/puzzle";
+import { type Cell, type Dir, type Puzzle, ckey, edgeKey, step } from "../../src/core/puzzle";
 import { run } from "../../src/core/sim";
 import { type Step, build, route } from "./player";
 
@@ -57,22 +57,47 @@ function obviousTracks(pz: Puzzle): { name: string; routes: { d: { depot: number
   return out;
 }
 
-// The first recipe (track + signals) that solves the board, or "" if none does.
-export function brainless(pz: Puzzle, reference: Layout): string {
-  const tracks: { name: string; lay: Layout }[] = [{ name: "reference track", lay: reference }];
+// The ways trains leave each square along some routes.
+function travel(paths: Step[][]): Map<string, Set<Dir>> {
+  const out = new Map<string, Set<Dir>>();
+  for (const p of paths)
+    for (const s of p) {
+      const k = ckey(s.cell);
+      if (!out.has(k)) out.set(k, new Set());
+      out.get(k)!.add(s.out);
+    }
+  return out;
+}
+
+// The first recipe (track + signals) that solves the board, or "" if none does. On
+// block-signal boards each recipe is tried with signals both ways, and one way facing the
+// way trains run (where both directions run: both ways, or no signal).
+export function brainless(pz: Puzzle, reference: Layout, referencePaths: Step[][] = []): string {
+  const tracks: { name: string; lay: Layout; runs: Map<string, Set<Dir>> }[] = [{ name: "reference track", lay: reference, runs: travel(referencePaths) }];
   for (const t of obviousTracks(pz)) {
     const lay = build(pz, t.routes, new Set());
-    if (lay) tracks.push({ name: t.name, lay });
+    if (lay) tracks.push({ name: t.name, lay, runs: travel(t.routes.map((r) => r.path)) });
   }
+  const facings = pz.blockSignals ? (["both ways", "one way, both ways where shared", "one way, none where shared"] as const) : (["both ways"] as const);
   for (const t of tracks) {
     const base = t.lay.clone();
     base.stops.clear();
+    base.facing.clear();
     const cells: Cell[] = [];
     for (let y = 0; y < pz.h; y++) for (let x = 0; x < pz.w; x++) if (base.dirsAt(pz, { x, y }).length) cells.push({ x, y });
     for (const [name, recipe] of Object.entries(RECIPES)) {
-      const lay = base.clone();
-      for (const c of recipe(pz, lay, cells)) lay.stops.add(ckey(c));
-      if (run(pz, lay).success) return `${name} on the ${t.name}`;
+      for (const facing of facings) {
+        if (facing !== "both ways" && !t.runs.size) continue;
+        const lay = base.clone();
+        for (const c of recipe(pz, lay, cells)) {
+          const k = ckey(c);
+          const ways = [...(t.runs.get(k) ?? [])];
+          if (facing === "one way, none where shared" && ways.length !== 1) continue;
+          lay.stops.add(k);
+          if (facing !== "both ways" && ways.length === 1) lay.facing.set(k, ways[0]);
+        }
+        if (run(pz, lay).success) return `${name} (${facing}) on the ${t.name}`;
+      }
     }
   }
   return "";

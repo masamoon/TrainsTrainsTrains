@@ -21,6 +21,7 @@ import {
   opp,
   parseCell,
   same,
+  step,
   vec,
 } from "../core/puzzle";
 import { type RunResult, type SimEvent, type TrainFrame, blockAhead, blocks } from "../core/sim";
@@ -252,7 +253,8 @@ export class Board {
       if (dirs.length === 2) {
         if (!pz.allowStop) this.onHint("Stop signals open at stop 5.");
         else {
-          if (lay.stops.has(k)) lay.stops.delete(k);
+          if (pz.blockSignals) this.cycleSignal(p, dirs);
+          else if (lay.stops.has(k)) lay.stops.delete(k);
           else lay.stops.add(k);
           this.changed = true;
         }
@@ -268,6 +270,45 @@ export class Board {
       } else if (dirs.length === 4) this.onHint("Signals can't go on a crossing.");
       else this.onHint("Put a stop signal on a straight or curve, or a colour signal on a switch.");
     }
+  }
+
+  // Block signals cycle: one way, the other way, both ways, off. The first tap faces away
+  // from the nearest depot, the way trains there usually run.
+  private cycleSignal(p: Cell, dirs: Dir[]): void {
+    const { lay } = this;
+    const k = ckey(p);
+    const first = this.awayFromDepot(p, dirs);
+    const other = dirs.find((d) => d !== first) as Dir;
+    if (!lay.stops.has(k)) {
+      lay.stops.add(k);
+      lay.facing.set(k, first);
+      this.onHint("A signal holds trains heading the way its arrow points. Tap again to turn it round.");
+    } else if (lay.facing.get(k) === first) lay.facing.set(k, other);
+    else if (lay.facing.has(k)) {
+      lay.facing.delete(k);
+      this.onHint("Both ways: this signal holds trains in either direction.");
+    } else lay.stops.delete(k);
+  }
+
+  private awayFromDepot(p: Cell, dirs: Dir[]): Dir {
+    const { pz, lay } = this;
+    const dist = (d: Dir): number => {
+      const seen = new Set([ckey(p)]);
+      let ring = [step(p, d)];
+      for (let n = 1; ring.length && n < pz.w * pz.h; n++) {
+        const next: Cell[] = [];
+        for (const c of ring) {
+          if (!pz.inside(c) || seen.has(ckey(c))) continue;
+          seen.add(ckey(c));
+          if (pz.depotIndexAt(c) >= 0) return n;
+          for (const e of lay.dirsAt(pz, c)) next.push(step(c, e));
+        }
+        ring = next;
+      }
+      return Infinity;
+    };
+    const [a, b] = dirs;
+    return dist(a) <= dist(b) ? b : a;
   }
 
   // Playback
@@ -403,6 +444,28 @@ export class Board {
         }
       }
     }
+  }
+
+  // A one-way signal's arrow on the track, pointing the way the trains it holds run.
+  private drawFacing(p: Cell, from: Dir, to: Dir): void {
+    const { ctx, cellSize: cs } = this;
+    const at = this.pathPoint(p, from, to, 0.62);
+    const ahead = this.pathPoint(p, from, to, 0.7);
+    const a = Math.atan2(ahead.y - at.y, ahead.x - at.x);
+    // A long, narrow head so the way it points reads at a glance, on curves too.
+    const r = cs * 0.22;
+    ctx.beginPath();
+    ctx.moveTo(at.x + Math.cos(a) * r, at.y + Math.sin(a) * r);
+    ctx.lineTo(at.x + Math.cos(a + 2.6) * r * 0.85, at.y + Math.sin(a + 2.6) * r * 0.85);
+    ctx.lineTo(at.x + Math.cos(a - 2.6) * r * 0.85, at.y + Math.sin(a - 2.6) * r * 0.85);
+    ctx.closePath();
+    // Red like the lamp, edged in panel cream so it shows on the ink track and off it.
+    ctx.strokeStyle = "#f4f5f0";
+    ctx.lineWidth = Math.max(2, cs * 0.06);
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    ctx.fillStyle = COLORS.red;
+    ctx.fill();
   }
 
   private rrect(x: number, y: number, w: number, h: number, r: number, fill: string, stroke?: string, lw = 0): void {
@@ -735,7 +798,7 @@ export class Board {
     const cs = this.cellSize;
     const cells = new Set<string>();
     for (const t of this.currentFrame()) {
-      if (t.state !== "moving" || t.hold <= 0 || !this.lay.stops.has(ckey(t.pos))) continue;
+      if (t.state !== "moving" || t.hold <= 0 || !this.lay.governs(ckey(t.pos), t.out)) continue;
       for (const k of blockAhead(this.pz, this.lay, t.pos, t.out)) cells.add(k);
     }
     for (const k of cells) {
@@ -769,6 +832,8 @@ export class Board {
       // A block signal shows green while its block is clear during a run.
       const off = pz.blockSignals ? COLORS.green : "rgba(216,67,46,0.45)";
       this.circle(hc, cs * 0.075, lit ? COLORS.red : off);
+      const f = lay.facing.get(k);
+      if (pz.blockSignals && f !== undefined) this.drawFacing(p, dirs.find((d) => d !== f) as Dir, f);
     }
     for (const [k, color] of lay.lamps) {
       const p = parseCell(k);

@@ -192,9 +192,14 @@ export function build(pz: Puzzle, routes: State["routes"], stops: Set<string>): 
       return null;
     }
   }
+  // A stop is "x,y", or "x,y@D" for a one-way block signal facing D (one of NESW).
   for (const s of stops) {
-    const [x, y] = s.split(",").map(Number);
-    if (lay.dirsAt(pz, { x, y }).length === 2 && pz.buildable({ x, y })) lay.stops.add(s);
+    const [k, f] = s.split("@");
+    const [x, y] = k.split(",").map(Number);
+    const dirs = lay.dirsAt(pz, { x, y });
+    if (dirs.length !== 2 || !pz.buildable({ x, y })) continue;
+    lay.stops.add(k);
+    if (f && pz.blockSignals && dirs.includes("NESW".indexOf(f) as Dir)) lay.facing.set(k, "NESW".indexOf(f) as Dir);
   }
   return lay;
 }
@@ -278,12 +283,14 @@ export function play(pz: Puzzle, maxDeparts = 12, limits: Limits = {}): Played {
       const r = cur.routes[i];
       const upto = r.path.findIndex((s) => near(s.cell));
       for (let j = 1; j < Math.max(upto, 1); j++) {
-        const k = ckey(r.path[j].cell);
+        // On block-signal boards a person faces the signal the way their train runs.
+        const k = ckey(r.path[j].cell) + (pz.blockSignals ? "@" + "NESW"[r.path[j].out] : "");
         if (!cur.stops.has(k)) moves.push({ routes: cur.routes, stops: new Set([...cur.stops, k]) });
       }
       for (const s of r.path) {
         const k = ckey(s.cell);
-        if (cur.stops.has(k)) moves.push({ routes: cur.routes, stops: new Set([...cur.stops].filter((x) => x !== k)) });
+        const on = [...cur.stops].filter((x) => x.split("@")[0] === k);
+        if (on.length) moves.push({ routes: cur.routes, stops: new Set([...cur.stops].filter((x) => !on.includes(x))) });
       }
       // Redraw this route round the trouble, alone or joining the rest.
       const others = new Layout();

@@ -64,7 +64,8 @@ function showHelp(): void {
   const lines = [
     "Drag across squares to lay track from each depot to the platform of the same colour and shape.",
     "Join three sides of a square to make a switch. Tap it to flip the lever.",
-    "Signal adds a stop signal to a straight or curve (a train holds two beats), or a colour lamp to a switch (that colour follows the lever, others take the other branch).",
+    "Signal adds a signal to a straight or curve: a train there waits until the track ahead, up to the next signal, is clear. Its arrow shows which way it holds; tap again to turn it. On a switch, Signal adds a colour lamp (that colour follows the lever, others take the other branch).",
+    "Some stops have a timetable: every train home by a set beat.",
     "Press Depart. Trains move one square per beat. Two trains in one square crash.",
     "Use no more track than par for three stars.",
     "Later lines add shaded track that is already laid, tunnels under the hills, and slow goods trains that move every other beat.",

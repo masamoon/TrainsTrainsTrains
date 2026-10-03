@@ -36,7 +36,10 @@ The board is a small grid (about 7 by 8). Some cells are woods, water or town an
   two make a straight or curve, three make a **switch** (a Y whose stem is the odd one out), four make a **crossing**.
 - **Switches**: a train coming up the stem goes the way the lever points (tap to flip it). A train coming from either branch merges into the stem.
 - **Colour signal** (on a switch): trains of the lamp's colour take the lever's branch, every other train takes the other.
-- **Stop signal** (on plain track): a train holds there for two beats, then carries on. This is how you fix timing.
+- **Block signal** (on plain track, TTD-style): a train at a signal waits until the block ahead, all the track up to the next signals, is empty.
+  Signals are one-way: a red arrow shows the way it holds trains, and trains the other way pass it. Tap to cycle one way, the other way, both ways, off.
+  Each block is shaded its own colour so you can see where one ends.
+- **Timetable**: every stop has a deadline (every train home by that beat), usually the best run plus two beats (plus one from Line 7). A train home later is LATE.
 - **Existing track** (Line 2 on): some levels open with track already laid, on shaded squares.
   It can be built onto (a branch off it makes a switch) but not erased, and it doesn't count toward your track.
 - **Tunnels** (Line 2 on): a straight dashed line under a ridge of hills, with a portal at each end, as signal-box diagrams draw them.
@@ -44,9 +47,7 @@ The board is a small grid (about 7 by 8). Some cells are woods, water or town an
   A tunnel is a single track: two trains meeting inside it crash.
 - **Goods trains** (Line 2 on): boxy wagons with ribs (square dots at their depot) that move every other beat.
   They change the timing without adding a tool: a goods train sits on a crossing for two beats.
-- **Timed platforms** (Line 7 on): a platform with a clock badge opens on the beat shown.
-  A train that arrives sooner is turned away (amber, like a wrong platform), so it has to be held back with stop signals or a longer route.
-  During a run the badge counts down and turns green once the platform is open.
+- ~~**Timed platforms**~~: retired from the campaign on 3 Oct 2026 with the move to block signals; the deadline carries the timing now. The engine still supports `opens` on a platform.
 
 Press **Depart** and the simulation runs in beats. Every train moves one cell per beat.
 Two trains in the same cell, or passing through each other, crash. A train that runs off the track derails.
@@ -88,32 +89,34 @@ Each line opens on a stop that teaches its idea and ends on a "rush" that uses e
 
 | Line | Name | Focus |
 | --- | --- | --- |
-| 3 | Harbour Line | two stop signals in a row, sharing a trunk and sorting it, queues |
-| 4 | Market Line | three colours from one depot (two colour signals), merging then sorting |
-| 5 | Moor Line | single-line working in corridors, tunnels with crossings |
+| 3 | Harbour Line | single lines over water with passing places |
+| 4 | Market Line | a street every line has to cross, some each way |
+| 5 | Moor Line | long single lines, following signals |
 | 6 | Coal Line | goods trains holding up the trains behind them |
-| 7 | Clockwork Line | **New: timed platform** |
-| 8 | Junction Line | existing track to cross, branch off or share |
-| 9 | Festival Line | the fourth colour (tangerine, diamond) and four-way sorting |
+| 7 | Clockwork Line | **one beat of slack** instead of two |
+| 8 | Junction Line | two colours through one gap, sorted after it |
+| 9 | Festival Line | the fourth colour (tangerine, diamond) |
 | 10 | Coast Line | larger mixed boards |
-| 11 | Summit Line | tunnels with goods trains and timetables |
-| 12 | Night Mail | timing-heavy: goods, timed platforms, long sorting runs |
+| 11 | Summit Line | one tunnel bore for every line |
+| 12 | Night Mail | busy lines, three trains a depot |
 | 13 | Grand Terminus | the hardest mixes |
 
-These lines were generated rather than drawn: `tools/campaign` places depots and platforms on a themed board, solves it many times with randomised routes,
-keeps boards whose solve rate matches the stop's place on the difficulty curve and that need what the stop is about (a stop signal, the tunnel, two lamps),
-then searches the chosen board harder so par is tight. The chosen levels are frozen as plain data in `src/core/lines/`.
+Since 3 Oct 2026 these lines are block-signal boards from `tools/lab/blockgen.ts` (plan in `tools/lab/blockplan.ts`): single lines with passing bays and spurs,
+or open ground split by a band crossed at a few gaps or a single tunnel. A board is kept only if no answer works without signals, no brainless recipe
+(`tools/lab/recipes.ts`) solves it, and the person model (`tools/lab/player.ts`) needs at least three Departs or gets stuck; later lines have fewer answers.
+`tools/lab/blockpick.ts` writes candidates to `tools/lab/out/` and `tools/lab/blockfreeze.ts` writes the chosen ones as plain data in `src/core/lines/`.
+The stop-signal lines that came before were made by `tools/campaign` and remain in git history.
 
 **Free and paid**: the first 20 stops (Line 1, Line 2 and the first four of Line 3) are marked `free` in the level data; the rest are planned as paid packs.
 Nothing is gated yet: every stop is open and can be played in any order.
 
 Every stop carries a reference solution. The tests check that it solves for three stars, that every piece of it is one a player could draw,
-and, where it uses signals, that it fails without them.
+and, where it uses signals, that it fails without them. Every campaign stop uses block signals and none has a timed platform.
 
 ### Mechanics we chose not to add
 
-- ~~**Chain or block signals**~~: reversed on 3 Oct 2026. The stop signal read as a pause, so fixing a crash was trial and error. The campaign is moving to one-way block signals with deadlines (see Difficulty lab): Lines 1 and 2 teach them now (2-6 facing, 2-7 timetable, 2-8 following signals), and Lines 3 to 13 keep the stop signal until they are rebuilt. Timed platforms retire with that rebuild.
-- **Longer trains, one-way track**: each adds a rule every later level has to explain. Timed platforms were the one deferred idea brought in (Line 7), because they give stop signals a second job without a new tool.
+- ~~**Chain or block signals**~~: reversed on 3 Oct 2026. The stop signal read as a pause, so fixing a crash was trial and error. The campaign is moving to one-way block signals with deadlines (see Difficulty lab): Lines 1 and 2 teach them now (2-6 facing, 2-7 timetable, 2-8 following signals), and Lines 3 to 13 were rebuilt as block-signal boards. Timed platforms retired with that rebuild. The Daily Wye still uses the stop signal.
+- **Longer trains, one-way track**: each adds a rule every later level has to explain. Timed platforms were brought in for Line 7 and retired with the block-signal rebuild.
 
 ## Daily Wye
 

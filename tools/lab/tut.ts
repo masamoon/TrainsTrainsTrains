@@ -1,10 +1,12 @@
-// Checks Lines 1-2 under block signals: reference, person model, recipes.
+// Checks campaign stops under block signals: reference, person model, recipes.
+//   tools/campaign/run.sh ../lab/tut [first] [last]   (stop indexes, default all)
 import { LEVELS, loadLevel } from "../../src/core/levels";
 import { run } from "../../src/core/sim";
 import { play } from "./player";
 import { brainless } from "./recipes";
 import { routesOf } from "./proto";
-for (let i = 0; i < 16; i++) {
+const [from, to] = [Number(process.argv[2] ?? 0), Number(process.argv[3] ?? LEVELS.length)];
+for (let i = from; i < to; i++) {
   const lv = LEVELS[i];
   const pz = loadLevel(i);
   const lay = pz.solutionLayout();

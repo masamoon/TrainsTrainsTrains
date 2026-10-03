@@ -6,11 +6,13 @@ import { type LevelData, Puzzle, ckey, parseCell } from "../../src/core/puzzle";
 import { run } from "../../src/core/sim";
 import { ascii } from "../campaign/solver";
 import { play } from "./player";
-import { reference, stopSets } from "./proto";
+import { type Sig, parseSig, reference, routesOf, sigKey, stopSets } from "./proto";
 import { brainless } from "./recipes";
 
 type P = [number, number];
-type Proto = { data: LevelData & { id: string; name: string }; paths: P[][]; stops?: P[]; why: string; pathsFrom?: string };
+// Block-signal boards get their deadline from the best run plus `slack` beats (less if a
+// recipe would solve it with that much), and "{deadline}" in their text is filled in.
+type Proto = { data: LevelData & { id: string; name: string }; paths: P[][]; stops?: Sig[]; why: string; pathsFrom?: string; slack?: number };
 
 const SINGLE = ["TTTTTTTTT", "D.T...T.S", "T.......T", "S.TTTTT.D", "TTTTTTTTT"];
 const singleEnds = (a: Partial<LevelData["depots"][number]>, b: Partial<LevelData["depots"][number]>): Pick<LevelData, "depots" | "stations"> => ({
@@ -124,10 +126,9 @@ const PROTOS: Proto[] = [
       signals: "block",
       deadline: 21,
       introTitle: "Prototype: block signals",
-      introText: "A train waits at a signal until the track ahead, up to the next signals, is empty. Everyone home by beat 21.",
+      introText: "A signal holds trains heading the way its arrow points until the track ahead, up to the next signals, is empty. Tap a signal again to turn it round. Everyone home by beat {deadline}.",
     },
     paths: [EAST_BAY, WEST_MAIN],
-    stops: [[3, 1], [5, 1], [4, 2]],
     why: "Waiting Room with block signals: a signal on each track of the loop lets the trains pass in time.",
   },
   {
@@ -150,7 +151,7 @@ const PROTOS: Proto[] = [
       signals: "block",
       deadline: 29,
       introTitle: "Prototype: block signals",
-      introText: "Signals guard the track ahead up to the next signals. One bridge, traffic both ways, everyone home by beat 29.",
+      introText: "One-way signals guard the track ahead, up to the next signals. One bridge, traffic both ways, everyone home by beat {deadline}.",
     },
     paths: [],
     pathsFrom: "lab-4",
@@ -173,7 +174,7 @@ const PROTOS: Proto[] = [
       signals: "block",
       deadline: 36,
       introTitle: "Prototype: block signals",
-      introText: "A long single line with two places to pass. Signals guard the track ahead; everyone home by beat 36.",
+      introText: "A long single line with two places to pass. One-way signals guard the track ahead; everyone home by beat {deadline}.",
     },
     paths: [],
     pathsFrom: "lab-3",
@@ -188,16 +189,19 @@ const xy = (k: string): P => {
 function freeze(pz: Puzzle, lay: Layout, paths: P[][]): NonNullable<LevelData["solution"]> {
   const sol: NonNullable<LevelData["solution"]> = { paths };
   if (lay.stops.size) sol.stops = [...lay.stops].map(xy);
+  if (lay.facing.size) sol.facing = [...lay.facing].map(([k, d]) => [...xy(k), "NESW"[d]] as [number, number, string]);
   if (lay.lamps.size) sol.lamps = [...lay.lamps].map(([k, c]) => [...xy(k), c] as [number, number, number]);
   if (lay.levers.size) sol.levers = [...lay.levers].map(([k, d]) => [...xy(k), "NESW"[d]] as [number, number, string]);
   if (lay.stems.size) sol.stems = [...lay.stems].map(([k, d]) => [...xy(k), "NESW"[d]] as [number, number, string]);
   void pz;
   return sol;
 }
+const sigsOf = (lay: Layout): Sig[] => [...lay.stops].map((k) => parseSig(k + (lay.facing.has(k) ? "@" + "NESW"[lay.facing.get(k)!] : "")));
 
 const out: (LevelData & { id: string })[] = [];
 for (const pr of PROTOS) {
-  const pz = Puzzle.fromData({ ...pr.data, par: 1 });
+  let data = pr.data;
+  let pz = Puzzle.fromData({ ...data, par: 1 });
   let paths = pr.pathsFrom ? out.find((o) => o.id === pr.pathsFrom)!.solution!.paths : pr.paths;
   let stops = pr.stops;
   if (!paths.length && !pr.pathsFrom) {
@@ -205,33 +209,57 @@ for (const pr of PROTOS) {
     const p = play(pz, 12);
     if (!p.solved) throw new Error(`${pr.data.name}: no reference`);
     paths = p.paths!.map((q) => q.map((c) => [c.x, c.y] as P));
-    stops = [...p.lay!.stops].map(xy);
+    stops = sigsOf(p.lay!);
   }
-  if (!stops) {
+  if (pz.blockSignals) {
+    // The deadline sits `slack` beats above the best run, and no recipe may solve the board.
+    const loose = Puzzle.fromData({ ...data, deadline: undefined, par: 1 });
+    const runs = stopSets(loose, paths, 4, 5000).map((st) => ({ st, beats: run(loose, reference(loose, paths, st.map(parseSig))).beats }));
+    if (!runs.length) throw new Error(`${pr.data.name}: reference needs more than four signals`);
+    const best = Math.min(...runs.map((r) => r.beats));
+    let done = false;
+    for (let slack = pr.slack ?? 2; slack >= 0 && !done; slack--) {
+      const deadline = best + slack;
+      const ok = runs.filter((r) => r.beats <= deadline);
+      // The cleanest answer: fewest signals, then none facing a way no train runs, then
+      // fewest both-ways signals, then fastest.
+      const runsOut = new Set(routesOf(loose, paths).flatMap((r) => r.path.map((st) => `${ckey(st.cell)}@${"NESW"[st.out]}`)));
+      const rank = (st: string[]) => [st.length, st.filter((k) => k.includes("@") && !runsOut.has(k)).length, st.filter((k) => !k.includes("@")).length];
+      const cmp = (a: { st: string[]; beats: number }, b: { st: string[]; beats: number }) => {
+        const [ra, rb] = [rank(a.st), rank(b.st)];
+        for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+        return a.beats - b.beats;
+      };
+      const pick = [...ok].sort(cmp)[0].st;
+      const fewest = pick.length;
+      data = { ...pr.data, deadline, introText: pr.data.introText?.replace("{deadline}", String(deadline)) };
+      pz = Puzzle.fromData({ ...data, par: 1 });
+      const lay = reference(pz, paths, pick.map(parseSig));
+      const easy = brainless(pz, lay, routesOf(pz, paths).map((r) => r.path));
+      console.log(`${pr.data.id}: best run ${best}, deadline ${deadline}: ${ok.length} of ${runs.length} signal sets on time, fewest ${fewest}: ${pick.join(" ")}; ${easy ? `solved without thinking (${easy})` : "no recipe solves it"}`);
+      if (!easy) {
+        stops = pick.map(parseSig);
+        done = true;
+      }
+    }
+    if (!done) throw new Error(`${pr.data.name}: a recipe solves it at every deadline`);
+  } else if (!stops) {
     const sets = stopSets(pz, paths, 4, 2000);
     if (!sets.length) throw new Error(`${pr.data.name}: reference needs more than four signals`);
     const fewest = Math.min(...sets.map((s) => s.length));
-    stops = sets.find((s) => s.length === fewest)!.map(xy);
+    stops = sets.find((s) => s.length === fewest)!.map(parseSig);
   }
   const lay = reference(pz, paths, stops);
   const res = run(pz, lay);
   if (!res.success) throw new Error(`${pr.data.name}: reference fails`);
-  if (pz.blockSignals) {
-    // No recipe may solve it, and the deadline must be within two beats of the best run.
-    const easy = brainless(pz, lay);
-    if (easy) throw new Error(`${pr.data.name}: solved without thinking (${easy})`);
-    const loose = Puzzle.fromData({ ...pr.data, deadline: undefined, par: 1 });
-    const best = Math.min(...stopSets(loose, paths, 4, 5000).map((st) => run(loose, reference(loose, paths, st.map(xy))).beats));
-    if (pz.deadline > best + 2) throw new Error(`${pr.data.name}: deadline ${pz.deadline} is loose (best run ${best})`);
-    console.log(`${pr.data.id}: no recipe solves it; deadline ${pz.deadline}, best run ${best}`);
-  }
   const par = lay.trackCount(pz);
   pz.par = par;
   const model = play(pz, 12);
   const budget = play(pz, 12, { track: par });
   console.log(`${pr.data.id} ${pr.data.name}: par ${par}, stops ${lay.stops.size}; model ${model.solved ? `solves in ${model.departs} departs (track ${model.track})` : "stuck"}; with par as a budget ${budget.solved ? `solves in ${budget.departs}` : "stuck"}\n${ascii(pz, lay)}\n`);
-  out.push({ ...pr.data, par, solution: freeze(pz, lay, paths) });
+  out.push({ ...data, par, solution: freeze(pz, lay, paths) });
   void ckey;
+  void sigKey;
 }
 
 const ts = `// Difficulty prototypes for playtesting, at #/lab/1 and on. Lab 5 onward try block signals. Not part of the campaign: nothing

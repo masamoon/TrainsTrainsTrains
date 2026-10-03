@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { LEVELS, loadLevel } from "../src/core/levels";
-import { drag } from "./helpers";
+import { LAB } from "../src/core/lab";
+import { E, Puzzle, S } from "../src/core/puzzle";
+import { cellPoint, drag } from "./helpers";
 
 test("home shows the campaign and today's Daily Wye", async ({ page }) => {
   await page.goto("./");
@@ -132,4 +134,29 @@ test("the map runs on to the last of more than a hundred stops", async ({ page }
   const last = LEVELS[LEVELS.length - 1];
   await expect(page.getByRole("button", { name: new RegExp(`Line ${last.line + 1}, stop ${last.stop + 1}, ${last.name}, next`) })).toBeVisible();
   expect(LEVELS.length).toBeGreaterThanOrEqual(100);
+});
+
+test("a block signal turns round with each tap, and one-way signals solve Block Section", async ({ page }) => {
+  const data = LAB.find((l) => l.id === "lab-5")!;
+  const pz = Puzzle.fromData(data);
+  const lay = pz.solutionLayout().toData();
+  await page.goto("./");
+  await page.evaluate((layout) => {
+    layout.stops = [];
+    layout.facing = [];
+    localStorage.setItem("trainstrains.save.v1", JSON.stringify({ levels: { "lab-5": { stars: 0, layout } }, daily: {} }));
+  }, lay);
+  await page.goto("./#/lab/5");
+  await page.reload();
+  await page.getByRole("button", { name: "Signal" }).click();
+  // The first tap faces away from the nearest depot; the second turns the signal round.
+  for (const [x, y] of [[5, 1], [4, 2]] as [number, number][]) {
+    const p = await cellPoint(page, pz, x, y);
+    await page.mouse.click(p.x, p.y);
+    await page.mouse.click(p.x, p.y);
+  }
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("trainstrains.save.v1")!).levels["lab-5"].layout);
+  expect(new Map(saved.facing)).toEqual(new Map([["5,1", S], ["4,2", E]]));
+  await page.getByRole("button", { name: "DEPART" }).click();
+  await expect(page.getByRole("heading", { name: "ALL TRAINS HOME" })).toBeVisible({ timeout: 15_000 });
 });

@@ -1066,9 +1066,9 @@ export const LAB: LabStop[] = [
     ],
     "allowStop": true,
     "signals": "block",
-    "deadline": 21,
+    "deadline": 22,
     "introTitle": "Prototype: block signals",
-    "introText": "A train waits at a signal until the track ahead, up to the next signals, is empty. Everyone home by beat 21.",
+    "introText": "A signal holds trains heading the way its arrow points until the track ahead, up to the next signals, is empty. Tap a signal again to turn it round. Everyone home by beat 22.",
     "par": 14,
     "solution": {
       "paths": [
@@ -1175,16 +1175,24 @@ export const LAB: LabStop[] = [
       ],
       "stops": [
         [
-          3,
-          1
-        ],
-        [
           5,
           1
         ],
         [
           4,
           2
+        ]
+      ],
+      "facing": [
+        [
+          5,
+          1,
+          "S"
+        ],
+        [
+          4,
+          2,
+          "E"
         ]
       ],
       "levers": [
@@ -1318,7 +1326,7 @@ export const LAB: LabStop[] = [
     "signals": "block",
     "deadline": 29,
     "introTitle": "Prototype: block signals",
-    "introText": "Signals guard the track ahead up to the next signals. One bridge, traffic both ways, everyone home by beat 29.",
+    "introText": "One-way signals guard the track ahead, up to the next signals. One bridge, traffic both ways, everyone home by beat 29.",
     "par": 20,
     "solution": {
       "paths": [
@@ -1475,12 +1483,24 @@ export const LAB: LabStop[] = [
       ],
       "stops": [
         [
-          3,
-          6
+          4,
+          3
         ],
         [
           5,
           5
+        ]
+      ],
+      "facing": [
+        [
+          4,
+          3,
+          "N"
+        ],
+        [
+          5,
+          5,
+          "W"
         ]
       ],
       "lamps": [
@@ -1594,9 +1614,9 @@ export const LAB: LabStop[] = [
     ],
     "allowStop": true,
     "signals": "block",
-    "deadline": 36,
+    "deadline": 32,
     "introTitle": "Prototype: block signals",
-    "introText": "A long single line with two places to pass. Signals guard the track ahead; everyone home by beat 36.",
+    "introText": "A long single line with two places to pass. One-way signals guard the track ahead; everyone home by beat 32.",
     "par": 17,
     "solution": {
       "paths": [
@@ -1735,8 +1755,12 @@ export const LAB: LabStop[] = [
       ],
       "stops": [
         [
-          11,
-          1
+          4,
+          2
+        ],
+        [
+          7,
+          2
         ],
         [
           9,
@@ -1745,6 +1769,23 @@ export const LAB: LabStop[] = [
         [
           8,
           1
+        ]
+      ],
+      "facing": [
+        [
+          4,
+          2,
+          "E"
+        ],
+        [
+          7,
+          2,
+          "W"
+        ],
+        [
+          8,
+          1,
+          "S"
         ]
       ],
       "levers": [

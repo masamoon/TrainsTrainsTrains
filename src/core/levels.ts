@@ -1017,11 +1017,11 @@ const VALLEY_LINE: Stop[] = [
 ];
 
 // Block signals: a train at a signal waits until the track ahead, up to the next signals,
-// is empty. Lines 3 on still use the old stop signal until they are rebuilt.
+// is empty. Lines 1 and 2 are drawn by hand and marked here; Lines 3 on carry it already.
 const block = (s: Stop): Stop => ({ ...s, signals: "block" });
 
 // Lines run one after another on the map; stops unlock in order across them.
-// Lines 3 on were found with the solver in tools/campaign, then picked by hand.
+// Lines 3 on were found with tools/lab/blockgen.ts, then picked by hand.
 export const LINES: { name: string; color: number; stops: Stop[] }[] = [
   { name: "Branch Line", color: 0, stops: BRANCH_LINE.map(block) },
   { name: "Valley Line", color: 1, stops: VALLEY_LINE.map(block) },

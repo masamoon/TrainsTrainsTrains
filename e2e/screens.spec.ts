@@ -68,7 +68,7 @@ test("valley line", async ({ page }) => {
   await page.screenshot({ path: `${OUT}/level_valley.png` });
 });
 
-test("timed platform", async ({ page }) => {
+test("timetable", async ({ page }) => {
   const i = LEVELS.findIndex((lv) => lv.id === "7-6");
   const pz = loadLevel(i);
   const levels: Record<string, unknown> = {};

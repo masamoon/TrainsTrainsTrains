@@ -245,6 +245,13 @@ describe("timed platforms", () => {
 });
 
 describe("campaign", () => {
+  it("uses block signals everywhere and has no timed platforms", () => {
+    for (const lv of LEVELS) {
+      expect(lv.signals, lv.id).toBe("block");
+      expect(lv.stations.some((st) => st.opens), lv.id).toBe(false);
+    }
+  });
+
   LEVELS.forEach((data, i) => {
     it(`${data.id} ${data.name}: reference solution solves for three stars`, () => {
       const pz = loadLevel(i);

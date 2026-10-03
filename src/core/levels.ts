@@ -93,15 +93,16 @@ const BRANCH_LINE: Stop[] = [
       { at: [3, 6], dir: "N", color: 1 },
     ],
     allowStop: true,
-    introTitle: "New: stop signal",
+    introTitle: "New: signal",
     introText:
-      "Both trains reach the crossing on the same beat. Use Signal on a straight piece: a train holds there for two beats.",
+      "Both trains reach the crossing on the same beat. Use Signal on a straight piece: a train waits there until the track ahead, up to the next signal, is clear. Each shaded stretch is one block.",
     solution: {
       paths: [
         [[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3]],
         [[3, 0], [3, 1], [3, 2], [3, 3], [3, 4], [3, 5], [3, 6]],
       ],
       stops: [[3, 1]],
+      facing: [[3, 1, "S"]],
     },
   },
   {
@@ -122,6 +123,7 @@ const BRANCH_LINE: Stop[] = [
         [[0, 5], [1, 5], [1, 4], [1, 3]],
       ],
       stops: [[1, 1]],
+      facing: [[1, 1, "S"]],
     },
   },
   {
@@ -171,6 +173,7 @@ const BRANCH_LINE: Stop[] = [
         [[4, 0], [4, 1], [4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7]],
       ],
       stops: [[4, 1]],
+      facing: [[4, 1, "S"]],
       lamps: [[6, 2, 2]],
       levers: [[6, 2, "S"]],
     },
@@ -251,6 +254,7 @@ const VALLEY_LINE: Stop[] = [
         [[6, 1], [5, 1], [5, 2], [5, 3], [4, 3], [3, 3], [2, 3], [1, 3], [1, 4], [1, 5], [0, 5]],
       ],
       stops: [[5, 1]],
+      facing: [[5, 1, "S"]],
       levers: [[5, 3, "S"]],
     },
   },
@@ -276,95 +280,751 @@ const VALLEY_LINE: Stop[] = [
         [[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3]],
       ],
       stops: [[1, 3]],
+      facing: [[1, 3, "E"]],
     },
   },
   {
-    id: "2-6",
-    name: "Goods Loop",
-    rows: ["T.TTTTT.T", "T.TT..T.T", "T.......T", "T.TT..T.T", "T.TTTTT.T"],
-    depots: [
-      { at: [1, 0], dir: "S", trains: [0], goods: true },
-      { at: [7, 4], dir: "N", trains: [1], start: 2 },
-    ],
-    stations: [
-      { at: [7, 0], dir: "S", color: 0 },
-      { at: [1, 4], dir: "N", color: 1 },
-    ],
-    allowStop: true,
-    allowLamp: true,
-    introTitle: "Slow meeting",
-    introText: "The goods train is slow, so the trains meet later than you'd think. Loop and signal to fit.",
-    solution: {
-      paths: [
-        [[1, 0], [1, 1], [1, 2], [2, 2], [3, 2], [4, 2], [4, 1], [5, 1], [5, 2], [6, 2], [7, 2], [7, 1], [7, 0]],
-        [[7, 4], [7, 3], [7, 2], [6, 2], [5, 2], [5, 3], [4, 3], [4, 2], [3, 2], [2, 2], [1, 2], [1, 3], [1, 4]],
+      "id": "2-6",
+      "name": "Waiting Room",
+      "rows": [
+        "TTTTTTTTT",
+        "D.T...T.S",
+        "T.......T",
+        "S.TTTTT.D",
+        "TTTTTTTTT"
       ],
-      stops: [[7, 3]],
-    },
-  },
-  {
-    id: "2-7",
-    name: "Ridge Junction",
-    rows: [".......", ".......", ".......", "^^^^^..", "^^^^^..", "^^^^^..", ".......", "......."],
-    depots: [
-      { at: [0, 1], dir: "E", trains: [0, 1, 0], every: 3 },
-      { at: [5, 0], dir: "S", trains: [2], goods: true, start: 2 },
-    ],
-    stations: [
-      { at: [0, 6], dir: "E", color: 0 },
-      { at: [6, 6], dir: "W", color: 1 },
-      { at: [5, 7], dir: "N", color: 2 },
-    ],
-    fixed: [[[0, 1], [1, 1], [2, 1], [2, 2]], [[2, 6], [1, 6], [0, 6]]],
-    tunnels: [[[2, 3], [2, 5]]],
-    allowStop: true,
-    allowLamp: true,
-    introTitle: "Ridge junction",
-    introText: "Sort the trains once they're through the tunnel, and mind the goods train coming down the valley.",
-    solution: {
-      paths: [
-        [[2, 6], [3, 6], [4, 6], [5, 6], [6, 6]],
-        [[5, 0], [5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]],
+      "depots": [
+        {
+          "at": [
+            0,
+            1
+          ],
+          "dir": "E",
+          "trains": [
+            0,
+            0
+          ],
+          "start": 0,
+          "every": 3
+        },
+        {
+          "at": [
+            8,
+            3
+          ],
+          "dir": "W",
+          "trains": [
+            1,
+            1
+          ],
+          "start": 3,
+          "every": 3
+        }
       ],
-      stops: [[4, 6]],
-      lamps: [[2, 6, 1]],
-    },
-  },
-  {
-    id: "2-8",
-    name: "Valley Rush",
-    rows: ["........", "...^^...", "...^^...", "...^^...", "...^^...", "...^^...", "T..^^..T", "TT....TT"],
-    depots: [
-      { at: [0, 3], dir: "E", trains: [0, 2, 0], every: 3 },
-      { at: [2, 0], dir: "S", trains: [1], goods: true },
-    ],
-    stations: [
-      { at: [7, 1], dir: "W", color: 0 },
-      { at: [7, 5], dir: "W", color: 2 },
-      { at: [2, 7], dir: "N", color: 1 },
-    ],
-    tunnels: [[[3, 3], [4, 3]]],
-    allowStop: true,
-    allowLamp: true,
-    introTitle: "Valley rush",
-    introText: "Everything at once. The goods line crosses right in front of the tunnel.",
-    solution: {
-      paths: [
-        [[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3], [6, 2], [6, 1], [7, 1]],
-        [[6, 3], [6, 4], [6, 5], [7, 5]],
-        [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7]],
+      "stations": [
+        {
+          "at": [
+            8,
+            1
+          ],
+          "dir": "W",
+          "color": 0
+        },
+        {
+          "at": [
+            0,
+            3
+          ],
+          "dir": "E",
+          "color": 1
+        }
       ],
-      stops: [[1, 3]],
-      lamps: [[6, 3, 0]],
+      "allowStop": true,
+      "allowLamp": true,
+      "introTitle": "Which way it points",
+      "introText": "A signal holds only trains heading the way its arrow points; trains the other way pass it. Tap a signal again to turn it round.",
+      "solution": {
+        "paths": [
+          [
+            [
+              0,
+              1
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              3,
+              1
+            ],
+            [
+              4,
+              1
+            ],
+            [
+              5,
+              1
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              6,
+              2
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              7,
+              1
+            ],
+            [
+              8,
+              1
+            ]
+          ],
+          [
+            [
+              8,
+              3
+            ],
+            [
+              7,
+              3
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              6,
+              2
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              4,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              3
+            ],
+            [
+              0,
+              3
+            ]
+          ]
+        ],
+        "stops": [
+          [
+            7,
+            3
+          ]
+        ],
+        "levers": [
+          [
+            1,
+            2,
+            "S"
+          ],
+          [
+            3,
+            2,
+            "N"
+          ],
+          [
+            5,
+            2,
+            "W"
+          ],
+          [
+            7,
+            2,
+            "N"
+          ]
+        ],
+        "stems": [
+          [
+            1,
+            2,
+            "E"
+          ],
+          [
+            3,
+            2,
+            "W"
+          ],
+          [
+            5,
+            2,
+            "E"
+          ],
+          [
+            7,
+            2,
+            "W"
+          ]
+        ],
+        "facing": [
+          [
+            7,
+            3,
+            "N"
+          ]
+        ]
+      }
     },
-  },
+    {
+      "id": "2-7",
+      "name": "Block Section",
+      "deadline": 22,
+      "rows": [
+        "TTTTTTTTT",
+        "D.T...T.S",
+        "T.......T",
+        "S.TTTTT.D",
+        "TTTTTTTTT"
+      ],
+      "depots": [
+        {
+          "at": [
+            0,
+            1
+          ],
+          "dir": "E",
+          "trains": [
+            0,
+            0
+          ],
+          "start": 0,
+          "every": 3
+        },
+        {
+          "at": [
+            8,
+            3
+          ],
+          "dir": "W",
+          "trains": [
+            1,
+            1
+          ],
+          "start": 3,
+          "every": 3
+        }
+      ],
+      "stations": [
+        {
+          "at": [
+            8,
+            1
+          ],
+          "dir": "W",
+          "color": 0
+        },
+        {
+          "at": [
+            0,
+            3
+          ],
+          "dir": "E",
+          "color": 1
+        }
+      ],
+      "allowStop": true,
+      "allowLamp": true,
+      "introTitle": "New: timetable",
+      "introText": "Everyone home by beat 22, so holding trains at the depot is too slow. Any signal ends a block for trains both ways, even one facing the other way.",
+      "solution": {
+        "paths": [
+          [
+            [
+              0,
+              1
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              3,
+              1
+            ],
+            [
+              4,
+              1
+            ],
+            [
+              5,
+              1
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              6,
+              2
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              7,
+              1
+            ],
+            [
+              8,
+              1
+            ]
+          ],
+          [
+            [
+              8,
+              3
+            ],
+            [
+              7,
+              3
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              6,
+              2
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              4,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              3
+            ],
+            [
+              0,
+              3
+            ]
+          ]
+        ],
+        "stops": [
+          [
+            5,
+            1
+          ],
+          [
+            4,
+            2
+          ]
+        ],
+        "facing": [
+          [
+            5,
+            1,
+            "S"
+          ],
+          [
+            4,
+            2,
+            "E"
+          ]
+        ],
+        "levers": [
+          [
+            1,
+            2,
+            "S"
+          ],
+          [
+            3,
+            2,
+            "N"
+          ],
+          [
+            5,
+            2,
+            "W"
+          ],
+          [
+            7,
+            2,
+            "N"
+          ]
+        ],
+        "stems": [
+          [
+            1,
+            2,
+            "E"
+          ],
+          [
+            3,
+            2,
+            "W"
+          ],
+          [
+            5,
+            2,
+            "E"
+          ],
+          [
+            7,
+            2,
+            "W"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "2-8",
+      "name": "Two Sections",
+      "deadline": 32,
+      "rows": [
+        "TTTTTTTTTTTTT",
+        "D.T..TTT..T.S",
+        "T...........T",
+        "S.TTTTTTTTT.D",
+        "TTTTTTTTTTTTT"
+      ],
+      "depots": [
+        {
+          "at": [
+            0,
+            1
+          ],
+          "dir": "E",
+          "trains": [
+            0,
+            0
+          ],
+          "start": 0,
+          "every": 3
+        },
+        {
+          "at": [
+            12,
+            3
+          ],
+          "dir": "W",
+          "trains": [
+            1,
+            1
+          ],
+          "start": 2,
+          "every": 3
+        }
+      ],
+      "stations": [
+        {
+          "at": [
+            12,
+            1
+          ],
+          "dir": "W",
+          "color": 0
+        },
+        {
+          "at": [
+            0,
+            3
+          ],
+          "dir": "E",
+          "color": 1
+        }
+      ],
+      "allowStop": true,
+      "allowLamp": true,
+      "introTitle": "Two sections",
+      "introText": "A train waiting at a signal still fills the block behind it. Split the long line so trains can follow each other closely. Home by beat 32.",
+      "solution": {
+        "paths": [
+          [
+            [
+              0,
+              1
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              4,
+              2
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              6,
+              2
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              8,
+              2
+            ],
+            [
+              9,
+              2
+            ],
+            [
+              10,
+              2
+            ],
+            [
+              11,
+              2
+            ],
+            [
+              11,
+              1
+            ],
+            [
+              12,
+              1
+            ]
+          ],
+          [
+            [
+              12,
+              3
+            ],
+            [
+              11,
+              3
+            ],
+            [
+              11,
+              2
+            ],
+            [
+              10,
+              2
+            ],
+            [
+              9,
+              2
+            ],
+            [
+              9,
+              1
+            ],
+            [
+              8,
+              1
+            ],
+            [
+              8,
+              2
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              6,
+              2
+            ],
+            [
+              5,
+              2
+            ],
+            [
+              4,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              3
+            ],
+            [
+              0,
+              3
+            ]
+          ]
+        ],
+        "stops": [
+          [
+            4,
+            2
+          ],
+          [
+            7,
+            2
+          ],
+          [
+            9,
+            1
+          ],
+          [
+            8,
+            1
+          ]
+        ],
+        "facing": [
+          [
+            4,
+            2,
+            "E"
+          ],
+          [
+            7,
+            2,
+            "W"
+          ],
+          [
+            8,
+            1,
+            "S"
+          ]
+        ],
+        "levers": [
+          [
+            1,
+            2,
+            "S"
+          ],
+          [
+            8,
+            2,
+            "E"
+          ],
+          [
+            9,
+            2,
+            "N"
+          ],
+          [
+            11,
+            2,
+            "N"
+          ]
+        ],
+        "stems": [
+          [
+            1,
+            2,
+            "E"
+          ],
+          [
+            8,
+            2,
+            "W"
+          ],
+          [
+            9,
+            2,
+            "E"
+          ],
+          [
+            11,
+            2,
+            "W"
+          ]
+        ]
+      }
+    },
 ];
+
+// Block signals: a train at a signal waits until the track ahead, up to the next signals,
+// is empty. Lines 3 on still use the old stop signal until they are rebuilt.
+const block = (s: Stop): Stop => ({ ...s, signals: "block" });
 
 // Lines run one after another on the map; stops unlock in order across them.
 // Lines 3 on were found with the solver in tools/campaign, then picked by hand.
 export const LINES: { name: string; color: number; stops: Stop[] }[] = [
-  { name: "Branch Line", color: 0, stops: BRANCH_LINE },
-  { name: "Valley Line", color: 1, stops: VALLEY_LINE },
+  { name: "Branch Line", color: 0, stops: BRANCH_LINE.map(block) },
+  { name: "Valley Line", color: 1, stops: VALLEY_LINE.map(block) },
   { name: "Harbour Line", color: 2, stops: HARBOUR_LINE },
   { name: "Market Line", color: 3, stops: MARKET_LINE },
   { name: "Moor Line", color: 1, stops: MOOR_LINE },

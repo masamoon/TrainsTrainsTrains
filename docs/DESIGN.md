@@ -67,7 +67,7 @@ Line 1, Branch Line (first playable):
 2. Round the Pond: route around obstacles.
 3. Two Lines: two depots, two platforms, keep them apart.
 4. The Crossing: two routes must cross.
-5. Hold the Line: the routes cross at the same beat; a stop signal fixes it.
+5. Hold the Line: the routes cross at the same beat; a signal that waits for the track ahead fixes it.
 6. Junction: two depots share one platform through a merging switch.
 7. Sorting Office: one depot sends two colours; a colour signal sorts them.
 8. Rush Hour: everything together.
@@ -112,7 +112,7 @@ and, where it uses signals, that it fails without them.
 
 ### Mechanics we chose not to add
 
-- **Chain or block signals** (hold until the way ahead is clear): they would solve the timing for the player, which is the puzzle. The stop signal stays the one timing tool.
+- ~~**Chain or block signals**~~: reversed on 3 Oct 2026. The stop signal read as a pause, so fixing a crash was trial and error. The campaign is moving to one-way block signals with deadlines (see Difficulty lab): Lines 1 and 2 teach them now (2-6 facing, 2-7 timetable, 2-8 following signals), and Lines 3 to 13 keep the stop signal until they are rebuilt. Timed platforms retire with that rebuild.
 - **Longer trains, one-way track**: each adds a rule every later level has to explain. Timed platforms were the one deferred idea brought in (Line 7), because they give stop signals a second job without a new tool.
 
 ## Daily Wye

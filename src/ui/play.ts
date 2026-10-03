@@ -224,7 +224,7 @@ export function playScreen(save: Save, mode: "level" | "daily" | "lab", index: n
     const ev = result?.events.find((e) => e.kind !== "arrived");
     const who = LIVERY_NAMES[(ev?.color ?? 0) % 4];
     let title = "CRASH";
-    let text = `The ${who} train ran into another train. Try a stop signal or a different route.`;
+    let text = `The ${who} train ran into another train. Try a ${pz.blockSignals ? "signal" : "stop signal"} or a different route.`;
     if (ev?.kind === "derail") {
       title = "DERAILED";
       text = `The ${who} train ran off the end of its track.`;

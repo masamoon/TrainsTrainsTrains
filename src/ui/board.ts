@@ -251,7 +251,7 @@ export class Board {
       if (!this.changed && this.isFixed(p)) this.onHint("Shaded track came with the line. It can't be erased.");
     } else if (pz.buildable(p)) {
       if (dirs.length === 2) {
-        if (!pz.allowStop) this.onHint("Stop signals open at stop 5.");
+        if (!pz.allowStop) this.onHint("Signals open at stop 5.");
         else {
           if (pz.blockSignals) this.cycleSignal(p, dirs);
           else if (lay.stops.has(k)) lay.stops.delete(k);
@@ -268,7 +268,7 @@ export class Board {
           this.changed = true;
         }
       } else if (dirs.length === 4) this.onHint("Signals can't go on a crossing.");
-      else this.onHint("Put a stop signal on a straight or curve, or a colour signal on a switch.");
+      else this.onHint("Put a signal on a straight or curve, or a colour signal on a switch.");
     }
   }
 
